@@ -668,21 +668,26 @@ def render_upload_and_template_page() -> None:
 
     st.divider()
 
-    # ── File Upload Section ───────────────────────────────────────────
+    # ── File Upload Section (inline — no import dependency) ───────────────
     st.markdown(
         "<h4 style='color:#A78BFA;'>&#11014; Upload Your Files</h4>",
         unsafe_allow_html=True,
     )
-    from modules.upload import render_upload_page
-    render_upload_page(show_header=False)
+
+    from modules.upload import _render_single_uploader
+    col_pr, col_gstr = st.columns(2, gap="large")
+    with col_pr:
+        _render_single_uploader("Purchase Register", "pr_df", "📋", "#00D4FF")
+    with col_gstr:
+        _render_single_uploader("GSTR-2B", "gstr2b_df", "🏛️", "#A78BFA")
 
     st.divider()
-    # ── Proceed button ─────────────────────────────────────────────
+    # ── Proceed button ─────────────────────────────────────────────────────
     pr_done   = st.session_state.get("pr_df") is not None
     gstr_done = st.session_state.get("gstr2b_df") is not None
     if pr_done and gstr_done:
-        st.success("✅ Both files uploaded! Ready to proceed.")
-        if st.button("▶ Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
+        st.success("Both files uploaded! Ready to proceed.")
+        if st.button("Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
             st.session_state["current_page"] = "Column Mapping"
             st.rerun()
     else:
@@ -690,7 +695,6 @@ def render_upload_and_template_page() -> None:
         if not pr_done:   missing.append("Purchase Register")
         if not gstr_done: missing.append("GSTR-2B")
         st.info(f"Please upload: {', '.join(missing)}")
-
 
 
 # ---------------------------------------------------------------------------

@@ -207,17 +207,17 @@ def render_home_dashboard() -> None:
 
     with col_quick:
         st.subheader("⚡ Quick Actions")
-        if st.button("📤 Upload Files", use_container_width=True, key="qa_upload"):
+        if st.button("Upload Files", use_container_width=True, key="qa_upload"):
             st.session_state["current_page"] = "Upload Data"
             st.rerun()
-        if st.button("🗂️ Column Mapping", use_container_width=True, key="qa_mapping"):
+        if st.button("Column Mapping", use_container_width=True, key="qa_mapping"):
             st.session_state["current_page"] = "Column Mapping"
             st.rerun()
-        if st.button("⚙️ Reconcile Now", use_container_width=True, key="qa_recon"):
-            st.session_state["current_page"] = "Reconciliation"
+        if st.button("Reconcile Now", use_container_width=True, key="qa_recon"):
+            st.session_state["current_page"] = "Reconcile"
             st.rerun()
-        if st.button("📊 View Reports", use_container_width=True, key="qa_reports"):
-            st.session_state["current_page"] = "Reconciliation Results"
+        if st.button("View Reports", use_container_width=True, key="qa_reports"):
+            st.session_state["current_page"] = "Reports"
             st.rerun()
 
     # ── Charts (if data available) ──────────────────────────────────────────
