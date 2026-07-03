@@ -385,6 +385,11 @@ def render_cleaning_summary(summary: dict, source_label: str = "") -> None:
         unsafe_allow_html=True,
     )
 
+    # Guard: summary must be a dict
+    if not isinstance(summary, dict):
+        st.info("No cleaning summary available yet.")
+        return
+
     orig = summary.get("original_rows", 0)
     final = summary.get("final_rows", 0)
     blank = summary.get("blank_removed", 0)

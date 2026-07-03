@@ -359,18 +359,19 @@ def _render_single_uploader(
         st.info(f"⬆️ Upload your **{source_label}** file to get started.")
 
 
-def render_upload_page() -> None:
+def render_upload_page(show_header: bool = True) -> None:
     """Render the full File Upload page with two uploaders and history."""
 
-    st.markdown(
-        "<h2 style='color:#00D4FF;'>📤 File Upload</h2>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='color:#94A3B8;'>Upload your Purchase Register and GSTR-2B files "
-        "to begin reconciliation.</p>",
-        unsafe_allow_html=True,
-    )
+    if show_header:
+        st.markdown(
+            "<h2 style='color:#00D4FF;'>📤 File Upload</h2>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='color:#94A3B8;'>Upload your Purchase Register and GSTR-2B files "
+            "to begin reconciliation.</p>",
+            unsafe_allow_html=True,
+        )
 
     # ── Two-column layout ──────────────────────────────────────────────────
     col_pr, col_gstr = st.columns(2, gap="large")

@@ -346,20 +346,26 @@ def init_session_state() -> None:
 # Sidebar Navigation
 # ---------------------------------------------------------------------------
 
+# 5 Main workflow steps + admin
 PAGES = {
-    "Dashboard": "🏠",
-    "Upload Data": "📤",
-    "Column Mapping": "🗂️",
-    "Reconciliation": "⚙️",
-    "Reconciliation Results": "📊",
-    "Analytics": "📈",
-    "Reports": "📄",
-    "Audit Log": "🔍",
-    "Settings": "⚙️",
-    "About": "ℹ️",
+    "Dashboard":       "🏠",
+    "Upload Data":     "📤",
+    "Column Mapping":  "🗂️",
+    "Reconcile":       "⚙️",
+    "Reports":         "📄",
+    "Settings":        "⚙️",
 }
 
 ADMIN_ONLY_PAGES = {"User Management": "👥"}
+
+# Step labels shown in sidebar
+STEP_LABELS = [
+    ("Dashboard",      "🏠", "Overview & KPIs"),
+    ("Upload Data",    "📤", "Templates & Upload"),
+    ("Column Mapping", "🗂️", "Map Columns"),
+    ("Reconcile",      "⚙️", "Run Reconciliation"),
+    ("Reports",        "📄", "View & Download"),
+]
 
 
 def render_sidebar() -> None:
@@ -502,32 +508,19 @@ def route_page(page: str) -> None:
         render_home_dashboard()
 
     elif page == "Upload Data":
-        from modules.upload import render_upload_page
-        render_upload_page()
+        render_upload_and_template_page()
 
     elif page == "Column Mapping":
         from modules.mapping import render_mapping_page
         render_mapping_page()
 
-    elif page == "Reconciliation":
+    elif page == "Reconcile":
         from modules.matching import render_reconciliation_page
         render_reconciliation_page()
-
-    elif page == "Reconciliation Results":
-        from modules.reconciliation import render_reconciliation_results_page
-        render_reconciliation_results_page()
-
-    elif page == "Analytics":
-        from modules.dashboard import render_analytics_page
-        render_analytics_page()
 
     elif page == "Reports":
         from modules.reports import render_reports_page
         render_reports_page()
-
-    elif page == "Audit Log":
-        from modules.audit import render_audit_log_page
-        render_audit_log_page()
 
     elif page == "Settings":
         from modules.settings import render_settings_page
@@ -537,11 +530,167 @@ def route_page(page: str) -> None:
         from modules.authentication import render_user_management_page
         render_user_management_page()
 
-    elif page == "About":
-        render_about_page()
-
     else:
-        st.error(f"Page '{page}' not found.")
+        # Fallback to dashboard
+        from modules.dashboard import render_home_dashboard
+        render_home_dashboard()
+
+
+# ---------------------------------------------------------------------------
+# Upload + Template Download Page
+# ---------------------------------------------------------------------------
+
+def render_upload_and_template_page() -> None:
+    """Upload page with downloadable Excel templates and close button."""
+    import io
+    import pandas as pd
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    # ── Close / Done button ───────────────────────────────────────────
+    hdr, close_col = st.columns([8, 1])
+    hdr.markdown(
+        "<h2 style='color:#00D4FF; margin:0;'>&#128228; Upload Data</h2>",
+        unsafe_allow_html=True,
+    )
+    if close_col.button("✖ Close", key="close_upload"):
+        st.session_state["current_page"] = "Dashboard"
+        st.rerun()
+
+    st.markdown(
+        "<p style='color:#94A3B8;'>Step 1: Download the template &nbsp;|&nbsp; "
+        "Step 2: Fill your data &nbsp;|&nbsp; Step 3: Upload both files</p>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Template Download Section ────────────────────────────────────
+    st.markdown(
+        "<h4 style='color:#A78BFA;'>&#11015; Download Templates</h4>",
+        unsafe_allow_html=True,
+    )
+
+    PR_COLUMNS = [
+        "vendor_name", "gstin", "invoice_number", "invoice_date",
+        "taxable_value", "cgst", "sgst", "igst", "cess",
+        "total_gst", "invoice_value",
+    ]
+    GSTR_COLUMNS = [
+        "vendor_name", "gstin", "invoice_number", "invoice_date",
+        "taxable_value", "cgst", "sgst", "igst", "cess",
+        "total_gst", "invoice_value",
+    ]
+
+    def make_template(columns: list, sheet_name: str, sample_rows: int = 3) -> bytes:
+        """Create a styled Excel template with sample rows."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = sheet_name
+
+        # Header row styling
+        header_fill = PatternFill("solid", fgColor="0D1B2A")
+        header_font = Font(name="Calibri", bold=True, color="00D4FF", size=11)
+        center = Alignment(horizontal="center", vertical="center")
+
+        for ci, col in enumerate(columns, 1):
+            cell = ws.cell(1, ci, col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center
+            ws.column_dimensions[
+                openpyxl.utils.get_column_letter(ci)
+            ].width = max(len(col) + 4, 18)
+
+        # Sample rows
+        samples = {
+            "vendor_name":   ["ABC Traders", "XYZ Pvt Ltd", "PQR Enterprises"],
+            "gstin":         ["29ABCDE1234F1Z5", "27XYZPQ5678G1Z3", "33PQRST9012H1Z7"],
+            "invoice_number":["INV-001", "INV-002", "INV-003"],
+            "invoice_date":  ["01-04-2024", "05-04-2024", "10-04-2024"],
+            "taxable_value": [100000, 250000, 75000],
+            "cgst":          [9000, 22500, 6750],
+            "sgst":          [9000, 22500, 6750],
+            "igst":          [0, 0, 0],
+            "cess":          [0, 0, 0],
+            "total_gst":     [18000, 45000, 13500],
+            "invoice_value": [118000, 295000, 88500],
+        }
+        row_fill = PatternFill("solid", fgColor="1A1A2E")
+        row_font = Font(name="Calibri", color="EAEAEA", size=10)
+
+        for ri in range(sample_rows):
+            for ci, col in enumerate(columns, 1):
+                val = samples.get(col, ["", "", ""])
+                cell = ws.cell(ri + 2, ci, val[ri] if ri < len(val) else "")
+                cell.font = row_font
+                cell.fill = row_fill
+
+        ws.row_dimensions[1].height = 22
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        st.markdown(
+            "<div style='background:rgba(0,212,255,0.05); border:1px solid #00D4FF33; "
+            "border-radius:10px; padding:14px; text-align:center;'>"
+            "<div style='color:#00D4FF; font-weight:700;'>&#128196; Purchase Register Template</div>"
+            "<div style='color:#64748B; font-size:0.8rem; margin:6px 0;'>11 standard columns with sample data</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.download_button(
+            label="⬇ Download PR Template",
+            data=make_template(PR_COLUMNS, "Purchase Register"),
+            file_name="Purchase_Register_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_pr_template",
+        )
+
+    with tc2:
+        st.markdown(
+            "<div style='background:rgba(167,139,250,0.05); border:1px solid #A78BFA33; "
+            "border-radius:10px; padding:14px; text-align:center;'>"
+            "<div style='color:#A78BFA; font-weight:700;'>&#128196; GSTR-2B Template</div>"
+            "<div style='color:#64748B; font-size:0.8rem; margin:6px 0;'>11 standard columns with sample data</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.download_button(
+            label="⬇ Download GSTR-2B Template",
+            data=make_template(GSTR_COLUMNS, "GSTR-2B"),
+            file_name="GSTR2B_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_gstr_template",
+        )
+
+    st.divider()
+
+    # ── File Upload Section ───────────────────────────────────────────
+    st.markdown(
+        "<h4 style='color:#A78BFA;'>&#11014; Upload Your Files</h4>",
+        unsafe_allow_html=True,
+    )
+    from modules.upload import render_upload_page
+    render_upload_page(show_header=False)
+
+    st.divider()
+    # ── Proceed button ─────────────────────────────────────────────
+    pr_done   = st.session_state.get("pr_df") is not None
+    gstr_done = st.session_state.get("gstr2b_df") is not None
+    if pr_done and gstr_done:
+        st.success("✅ Both files uploaded! Ready to proceed.")
+        if st.button("▶ Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
+            st.session_state["current_page"] = "Column Mapping"
+            st.rerun()
+    else:
+        missing = []
+        if not pr_done:   missing.append("Purchase Register")
+        if not gstr_done: missing.append("GSTR-2B")
+        st.info(f"Please upload: {', '.join(missing)}")
+
 
 
 # ---------------------------------------------------------------------------
