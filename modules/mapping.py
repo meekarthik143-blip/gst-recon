@@ -419,10 +419,41 @@ def render_mapping_page() -> None:
     # ── One-click Apply Both ───────────────────────────────────────────────
     pr_df   = st.session_state.get("pr_df")
     gstr_df = st.session_state.get("gstr2b_df")
+    pr_mapped   = st.session_state.get("pr_mapped")
+    gstr_mapped = st.session_state.get("gstr2b_mapped")
+
+    # Status badges
+    p_stat = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
+              "border-radius:20px; padding:2px 10px; font-size:0.72rem;'>MAPPED</span>"
+              if pr_mapped is not None else
+              "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
+              "border-radius:20px; padding:2px 10px; font-size:0.72rem;'>NOT MAPPED</span>")
+    g_stat = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
+              "border-radius:20px; padding:2px 10px; font-size:0.72rem;'>MAPPED</span>"
+              if gstr_mapped is not None else
+              "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
+              "border-radius:20px; padding:2px 10px; font-size:0.72rem;'>NOT MAPPED</span>")
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:12px; margin-bottom:12px;">
+            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(0,212,255,0.2);
+                 border-radius:8px; padding:8px 14px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:#00D4FF; font-size:0.88rem; font-weight:600;">Purchase Register</span>
+                {p_stat}
+            </div>
+            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(167,139,250,0.2);
+                 border-radius:8px; padding:8px 14px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:#A78BFA; font-size:0.88rem; font-weight:600;">GSTR-2B</span>
+                {g_stat}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if pr_df is not None and gstr_df is not None:
         if st.button(
-            "Apply Auto-Mapping for BOTH Files (Recommended)",
+            "Apply Auto-Mapping for BOTH Files (One Click)",
             type="primary",
             use_container_width=True,
             key="apply_both_btn",
@@ -450,9 +481,22 @@ def render_mapping_page() -> None:
             else:
                 st.success("Both files mapped and cleaned successfully!")
                 st.rerun()
-
-        st.markdown("<div style='text-align:center; color:#64748B; font-size:0.8rem; margin:-8px 0 12px 0;'>"
-                    "— or map columns manually below —</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='text-align:center; color:#64748B; font-size:0.78rem; margin:4px 0 14px 0;'>"
+            "— or map columns manually in the tabs below —</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div style='background:rgba(248,113,113,0.08); border:1px solid #F8717133; "
+            "border-radius:8px; padding:10px 16px; margin-bottom:14px;'>"
+            "<span style='color:#F87171; font-weight:600;'>Files not loaded.</span> "
+            "<span style='color:#94A3B8;'>Please go to </span>"
+            "<strong style='color:#00D4FF;'>Upload Data</strong>"
+            "<span style='color:#94A3B8;'> first and upload both files, then come back here.</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
     tab_pr, tab_gstr = st.tabs(
         ["Purchase Register Mapping", "GSTR-2B Mapping"]

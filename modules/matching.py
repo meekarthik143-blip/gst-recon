@@ -378,15 +378,35 @@ def fuzzy_match(
             for col in gstr2b_df.columns:
                 row[f"{col}_gstr2b"] = gstr_row.get(col, "")
 
-            row["fuzzy_score"] = round(fuzzy_score, 4)
-            row["confidence"] = assign_confidence(fuzzy_score)
-            row["match_tier"] = 5
-            row["match_key"] = f"Fuzzy (score={score:.1f}%)"
+            # Build human-readable reason
+            pr_inv  = str(pr_row.get("invoice_number", ""))
+            g_inv   = str(gstr_row.get("invoice_number", ""))
+            pr_val  = pr_row.get("total_gst", 0)
+            g_val   = gstr_row.get("total_gst", 0)
+            reasons = []
+            if normalize_for_match(pr_inv) != normalize_for_match(g_inv):
+                reasons.append(f"Invoice No: Books={pr_inv} | 2B={g_inv}")
+            try:
+                val_diff = abs(float(pr_val) - float(g_val))
+                if val_diff > 0.01:
+                    reasons.append(f"GST diff: {val_diff:.2f}")
+            except Exception:
+                pass
+            if not reasons:
+                reasons.append("Vendor/format difference")
+
+            row["Match Reason"]   = " | ".join(reasons)
+            row["Similarity %"]   = f"{score:.1f}%"
+            row["fuzzy_score"]    = round(fuzzy_score, 4)
+            row["confidence"]     = assign_confidence(fuzzy_score)
+            row["match_tier"]     = 5
+            row["match_key"]      = f"Near Match (score={score:.1f}%)"
             results.append(row)
 
     if results:
         return pd.DataFrame(results)
     return pd.DataFrame()
+
 
 
 # ---------------------------------------------------------------------------

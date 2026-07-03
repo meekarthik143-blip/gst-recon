@@ -1,4 +1,4 @@
-﻿"""
+"""
 GST Input Reconciliation System – Enterprise Edition
 Reports Export Module
 Prepared & Developed by Karthik LVN
@@ -905,13 +905,35 @@ def render_reports_page() -> None:
             "border-radius:8px; padding:10px 14px; margin-bottom:10px;'>"
             "<strong style='color:#FBBF24;'>What is Near Match?</strong>"
             "<div style='color:#94A3B8; font-size:0.83rem; margin-top:4px;'>"
-            "These invoices were found in both PR and GSTR-2B but with <b>slight differences</b> — "
-            "such as invoice number format (e.g., INV-001 vs INV/001) or small value gaps. "
-            "Please verify these manually and decide whether to treat them as matched or unmatched."
+            "These invoices were found in BOTH files but with <b>slight differences</b> — "
+            "such as invoice number format (INV-001 vs INV/001) or small value gaps. "
+            "The <b>Match Reason</b> column below explains exactly what is different. "
+            "Please verify manually and decide if they should be treated as matched."
             "</div></div>",
             unsafe_allow_html=True,
         )
-        _show(recon_results.get("fuzzy_candidates"), "Near Match", "nm")
+        nm_df = recon_results.get("fuzzy_candidates")
+        if nm_df is None or (hasattr(nm_df, 'empty') and nm_df.empty):
+            st.info("No Near Match records.")
+        else:
+            # Build a clean display with reason columns first
+            display_cols = {}
+            for c in ["Match Reason", "Similarity %"]:
+                if c in nm_df.columns:
+                    display_cols[c] = nm_df[c]
+            for c in ["vendor_name_pr", "gstin_pr", "invoice_number_pr", "invoice_date_pr",
+                      "total_gst_pr", "invoice_value_pr"]:
+                if c in nm_df.columns:
+                    display_cols[c.replace("_pr", " (Books)")] = nm_df[c]
+            for c in ["invoice_number_gstr2b", "total_gst_gstr2b"]:
+                if c in nm_df.columns:
+                    display_cols[c.replace("_gstr2b", " (2B)")] = nm_df[c]
+            # Fallback: show raw columns
+            if not display_cols:
+                st.dataframe(nm_df, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(pd.DataFrame(display_cols), use_container_width=True, hide_index=True)
+            st.caption(f"{len(nm_df):,} near match records — verify each row manually")
 
     with tab_dup:
         st.caption("Duplicate invoice numbers detected within the same file.")
