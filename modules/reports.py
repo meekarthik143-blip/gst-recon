@@ -630,31 +630,31 @@ def export_csv(df: pd.DataFrame, filename_hint: str = "reconciliation") -> bytes
 
 def _build_sheet_excel(recon_results: dict) -> bytes:
     """
-    Build a clean multi-sheet Excel from reconciliation results.
+    Multi-sheet Excel report.
     Sheets: Summary | Matched | Missing in Books | Missing in GSTR-2B |
-            Near Match - Review | Duplicates | Unreconciled | All Records
+            Near Match - Review (full PR+2B side-by-side + reason cols) |
+            Duplicates | Unreconciled | All Records |
+            As Per Books | As Per GSTR-2B
     """
     from openpyxl import Workbook
-    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side, GradientFill
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
     import datetime as dt
 
-    # ── Style constants ────────────────────────────────────────────────────
+    # ── Styles ─────────────────────────────────────────────────────────────
     WHITE_BG   = PatternFill("solid", fgColor="FFFFFF")
     ALT_BG     = PatternFill("solid", fgColor="F8FAFC")
     BORDER_CLR = "D1D5DB"
     DATA_FONT  = Font(name="Calibri", size=9, color="111827")
-    CTR        = Alignment(horizontal="center", vertical="center")
-    LEFT       = Alignment(horizontal="left",   vertical="center")
+    CTR  = Alignment(horizontal="center", vertical="center")
+    LEFT = Alignment(horizontal="left",   vertical="center")
 
     HDR_CONFIGS = {
-        "matched":   ("1F5E40", "FFFFFF"),   # dark green / white
-        "books":     ("7F1D1D", "FFFFFF"),   # dark red / white
-        "gstr":      ("78350F", "FFFFFF"),   # dark orange / white
-        "near":      ("78350F", "FBBF24"),   # dark amber / yellow
-        "dup":       ("3B0764", "FFFFFF"),   # dark purple / white
-        "unrecon":   ("1E293B", "FFFFFF"),   # slate / white
-        "all":       ("0F172A", "00D4FF"),   # navy / cyan
+        "matched": ("1F5E40", "FFFFFF"), "books":   ("7F1D1D", "FFFFFF"),
+        "gstr":    ("78350F", "FFFFFF"), "near":    ("78350F", "FBBF24"),
+        "dup":     ("3B0764", "FFFFFF"), "unrecon": ("1E293B", "FFFFFF"),
+        "all":     ("0F172A", "00D4FF"), "pr_view": ("1E3A8A", "FFFFFF"),
+        "gb_view": ("14532D", "FFFFFF"),
     }
 
     def thin_border():
@@ -662,124 +662,185 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
         return Border(left=s, right=s, top=s, bottom=s)
 
     def _fmt_val(val):
-        """Clean value: strip datetime time portion, round floats."""
-        if pd.isna(val) if not isinstance(val, str) else False:
-            return ""
+        try:
+            if pd.isna(val):
+                return ""
+        except Exception:
+            pass
         if hasattr(val, "strftime"):
             return val.strftime("%d-%m-%Y")
-        if isinstance(val, str):
-            # Remove " 00:00:00" from date strings
-            if val.endswith(" 00:00:00"):
-                return val[:10]
-            return val
+        if isinstance(val, str) and val.endswith(" 00:00:00"):
+            return val[:10]
         if isinstance(val, float):
             return round(val, 2)
         return val
 
-    def write_sheet(wb, title: str, df: pd.DataFrame, tab_color: str,
-                    fill_key: str, extra_first_cols: list = None):
+    def _col_label(c):
+        c = c.replace("_pr", " (Books)").replace("_gstr2b", " (2B)")
+        return c.replace("_", " ").strip().title()
+
+    def _write_rows(ws, df_out, hdr_fill, hdr_font):
+        col_labels = [_col_label(c) for c in df_out.columns]
+        for ci, label in enumerate(col_labels, 1):
+            cell = ws.cell(1, ci, label)
+            cell.font = hdr_font; cell.fill = hdr_fill
+            cell.alignment = CTR; cell.border = thin_border()
+        ws.row_dimensions[1].height = 20
+        ws.freeze_panes = "A2"
+        for ri, row in enumerate(df_out.itertuples(index=False), 2):
+            fill = WHITE_BG if ri % 2 == 0 else ALT_BG
+            for ci, val in enumerate(row, 1):
+                c = ws.cell(ri, ci)
+                c.value = _fmt_val(val); c.font = DATA_FONT
+                c.fill = fill; c.border = thin_border()
+                c.alignment = CTR if isinstance(val, (int, float)) else LEFT
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    c.number_format = "#,##0.00"
+        # Auto-fit
+        for ci, label in enumerate(col_labels, 1):
+            vals = [str(ws.cell(r, ci).value or "") for r in range(1, min(len(df_out) + 2, 52))]
+            ws.column_dimensions[get_column_letter(ci)].width = min(max((max(len(v) for v in vals) if vals else 10) + 2, 12), 42)
+
+    # Standard sheet (keeps only PR or plain invoice cols)
+    def write_sheet(wb, title, df, tab_color, fill_key):
         ws = wb.create_sheet(title)
         ws.sheet_properties.tabColor = tab_color
         if df is None or (hasattr(df, "empty") and df.empty):
             ws["A1"] = f"No {title} records."
             ws["A1"].font = Font(name="Calibri", color="94A3B8", italic=True, size=10)
             return
-
         hdr_bg, hdr_fg = HDR_CONFIGS.get(fill_key, ("0F172A", "FFFFFF"))
+        WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
+                "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
+        pr_cols = [c + "_pr" for c in WANT if c + "_pr" in df.columns]
+        plain   = [c for c in WANT if c in df.columns and c + "_pr" not in df.columns]
+        use_cols = pr_cols if pr_cols else (plain if plain else [c for c in df.columns if not c.startswith("_")][:14])
+        df_out = df[use_cols].copy()
+        _write_rows(ws, df_out, PatternFill("solid", fgColor=hdr_bg), Font(name="Calibri", bold=True, color=hdr_fg, size=9))
 
-        # ── Column selection ────────────────────────────────────────────────
+    # Near Match sheet — FULL side-by-side PR + GSTR-2B + reason cols first
+    def write_near_match_sheet(wb, df, tab_color):
+        ws = wb.create_sheet("Near Match - Review")
+        ws.sheet_properties.tabColor = tab_color
+        if df is None or (hasattr(df, "empty") and df.empty):
+            ws["A1"] = "No Near Match records."
+            ws["A1"].font = Font(name="Calibri", color="94A3B8", italic=True, size=10)
+            return
+        hdr_bg, hdr_fg = HDR_CONFIGS["near"]
+        # Reason/score cols first, then all PR cols, then all GSTR-2B cols
+        REASON_COLS = ["Match Reason", "Similarity %", "fuzzy_score", "confidence", "match_tier", "match_key"]
+        WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
+                "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
+        pr_cols  = [c + "_pr"     for c in WANT if c + "_pr"     in df.columns]
+        gst_cols = [c + "_gstr2b" for c in WANT if c + "_gstr2b" in df.columns]
+        reason_cols = [c for c in REASON_COLS if c in df.columns]
+        # Also include source cols if present
+        extra_source = [c for c in ["source_pr"] if c in df.columns]
+        full_cols = reason_cols + pr_cols + extra_source + gst_cols
+        if not full_cols:
+            full_cols = [c for c in df.columns if not c.startswith("_")]
+        df_out = df[full_cols].copy()
+        _write_rows(ws, df_out, PatternFill("solid", fgColor=hdr_bg), Font(name="Calibri", bold=True, color=hdr_fg, size=9))
+
+    # "As Per Books" — all PR-side records with status
+    def write_per_books(wb, matched, books, gstr, fuzzy):
+        ws = wb.create_sheet("As Per Books")
+        ws.sheet_properties.tabColor = "1E40AF"
+        hdr_bg, hdr_fg = HDR_CONFIGS["pr_view"]
         WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
                 "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
 
-        pr_cols  = [c + "_pr"     for c in WANT if c + "_pr"     in df.columns]
-        plain    = [c             for c in WANT if c in df.columns and c + "_pr" not in df.columns]
-        use_cols = pr_cols if pr_cols else plain
-        if not use_cols:
-            use_cols = [c for c in df.columns if not c.startswith("_")][:14]
+        def _extract(df, status_label, suffix="_pr"):
+            if df is None or (hasattr(df, "empty") and df.empty):
+                return pd.DataFrame()
+            cols = [c + suffix for c in WANT if c + suffix in df.columns]
+            if not cols:
+                cols = [c for c in WANT if c in df.columns]
+                suffix = ""
+            if not cols:
+                return pd.DataFrame()
+            out = df[cols].copy()
+            out.columns = [c.replace(suffix, "") for c in out.columns]
+            out.insert(0, "Status", status_label)
+            return out
 
-        # For Near Match, add extra info columns first
-        full_cols = []
-        if extra_first_cols:
-            full_cols = [c for c in extra_first_cols if c in df.columns]
-        full_cols += [c for c in use_cols if c not in full_cols]
+        # Books records = PR side of matched + PR only unmatched (missing_in_gstr2b) + PR side of fuzzy
+        frames = []
+        frames.append(_extract(matched, "Matched"))
+        # missing_in_gstr2b is already PR-perspective (no suffix)
+        if gstr is not None and not gstr.empty:
+            cols = [c for c in WANT if c in gstr.columns]
+            if cols:
+                out = gstr[cols].copy(); out.insert(0, "Status", "Not in GSTR-2B"); frames.append(out)
+        frames.append(_extract(fuzzy, "Near Match (Verify)", suffix="_pr"))
+        all_pr = pd.concat([f for f in frames if not f.empty], ignore_index=True)
+        if all_pr.empty:
+            ws["A1"] = "No Books records available."
+            return
+        _write_rows(ws, all_pr, PatternFill("solid", fgColor=hdr_bg), Font(name="Calibri", bold=True, color=hdr_fg, size=9))
 
-        df_out = df[full_cols].copy()
+    # "As Per GSTR-2B" — all GSTR-2B-side records with status
+    def write_per_gstr2b(wb, matched, books, gstr, fuzzy):
+        ws = wb.create_sheet("As Per GSTR-2B")
+        ws.sheet_properties.tabColor = "166534"
+        hdr_bg, hdr_fg = HDR_CONFIGS["gb_view"]
+        WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
+                "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
 
-        # Clean column display names
-        def _col_label(c):
-            c = c.replace("_pr", " (Books)").replace("_gstr2b", " (2B)")
-            c = c.replace("_", " ").strip()
-            return c.title()
+        def _extract(df, status_label, suffix="_gstr2b"):
+            if df is None or (hasattr(df, "empty") and df.empty):
+                return pd.DataFrame()
+            cols = [c + suffix for c in WANT if c + suffix in df.columns]
+            if not cols:
+                cols = [c for c in WANT if c in df.columns]
+                suffix = ""
+            if not cols:
+                return pd.DataFrame()
+            out = df[cols].copy()
+            out.columns = [c.replace(suffix, "") for c in out.columns]
+            out.insert(0, "Status", status_label)
+            return out
 
-        col_labels = [_col_label(c) for c in full_cols]
+        frames = []
+        frames.append(_extract(matched, "Matched"))
+        # missing_in_books is already GSTR-2B-perspective (no suffix)
+        if books is not None and not books.empty:
+            cols = [c for c in WANT if c in books.columns]
+            if cols:
+                out = books[cols].copy(); out.insert(0, "Status", "Not in Books"); frames.append(out)
+        frames.append(_extract(fuzzy, "Near Match (Verify)", suffix="_gstr2b"))
+        all_gb = pd.concat([f for f in frames if not f.empty], ignore_index=True)
+        if all_gb.empty:
+            ws["A1"] = "No GSTR-2B records available."
+            return
+        _write_rows(ws, all_gb, PatternFill("solid", fgColor=hdr_bg), Font(name="Calibri", bold=True, color=hdr_fg, size=9))
 
-        # ── Write header ────────────────────────────────────────────────────
-        hdr_fill = PatternFill("solid", fgColor=hdr_bg)
-        hdr_font = Font(name="Calibri", bold=True, color=hdr_fg, size=9)
-        for ci, label in enumerate(col_labels, 1):
-            cell = ws.cell(1, ci, label)
-            cell.font      = hdr_font
-            cell.fill      = hdr_fill
-            cell.alignment = CTR
-            cell.border    = thin_border()
-        ws.row_dimensions[1].height = 20
-        ws.freeze_panes = "A2"
+    # ── Data ───────────────────────────────────────────────────────────────
+    matched = recon_results.get("matched",           pd.DataFrame())
+    books   = recon_results.get("missing_in_books",  pd.DataFrame())
+    gstr    = recon_results.get("missing_in_gstr2b", pd.DataFrame())
+    fuzzy   = recon_results.get("fuzzy_candidates",  pd.DataFrame())
+    pr_dup  = recon_results.get("pr_duplicates",     pd.DataFrame())
+    gst_dup = recon_results.get("gstr2b_duplicates", pd.DataFrame())
+    stats   = recon_results.get("stats", {})
 
-        # ── Write data rows ─────────────────────────────────────────────────
-        for ri, row in enumerate(df_out.itertuples(index=False), 2):
-            fill = WHITE_BG if ri % 2 == 0 else ALT_BG
-            for ci, val in enumerate(row, 1):
-                c = ws.cell(ri, ci)
-                c.value     = _fmt_val(val)
-                c.font      = DATA_FONT
-                c.fill      = fill
-                c.border    = thin_border()
-                c.alignment = CTR if isinstance(val, (int, float)) else LEFT
-                if isinstance(val, (int, float)) and not isinstance(val, bool):
-                    c.number_format = "#,##0.00"
-
-        # ── Auto-fit column widths ──────────────────────────────────────────
-        for ci, label in enumerate(col_labels, 1):
-            col_vals = [str(ws.cell(r, ci).value or "") for r in range(1, min(len(df_out) + 2, 52))]
-            max_w = max(len(v) for v in col_vals) if col_vals else 10
-            ws.column_dimensions[get_column_letter(ci)].width = min(max(max_w + 2, 12), 40)
-
-    # ── Data preparation ───────────────────────────────────────────────────
-    matched   = recon_results.get("matched",           pd.DataFrame())
-    books     = recon_results.get("missing_in_books",  pd.DataFrame())
-    gstr      = recon_results.get("missing_in_gstr2b", pd.DataFrame())
-    fuzzy     = recon_results.get("fuzzy_candidates",  pd.DataFrame())
-    pr_dup    = recon_results.get("pr_duplicates",     pd.DataFrame())
-    gst_dup   = recon_results.get("gstr2b_duplicates", pd.DataFrame())
-    stats     = recon_results.get("stats", {})
-
-    dup_all = pd.concat([
-        (pr_dup  if isinstance(pr_dup,  pd.DataFrame) else pd.DataFrame()),
-        (gst_dup if isinstance(gst_dup, pd.DataFrame) else pd.DataFrame()),
-    ], ignore_index=True)
-
-    unrecon_frames = [df for df in [books, gstr, fuzzy]
-                      if isinstance(df, pd.DataFrame) and not df.empty]
+    dup_all = pd.concat([(pr_dup  if isinstance(pr_dup,  pd.DataFrame) else pd.DataFrame()),
+                         (gst_dup if isinstance(gst_dup, pd.DataFrame) else pd.DataFrame())],
+                        ignore_index=True)
+    unrecon_frames = [d for d in [books, gstr, fuzzy] if isinstance(d, pd.DataFrame) and not d.empty]
     unrecon = pd.concat(unrecon_frames, ignore_index=True) if unrecon_frames else pd.DataFrame()
-
     all_frames = ([matched] if isinstance(matched, pd.DataFrame) and not matched.empty else []) + unrecon_frames
     all_records = pd.concat(all_frames, ignore_index=True) if all_frames else pd.DataFrame()
 
-    # Near Match extra columns (user requested)
-    NM_EXTRA = ["Match Reason", "Similarity %", "fuzzy_score", "confidence",
-                "match_tier", "match_key"]
-
-    # ── Build workbook ─────────────────────────────────────────────────────
+    # ── Workbook ───────────────────────────────────────────────────────────
     wb = Workbook()
     wb.remove(wb.active)
 
-    # ── Sheet 1: Summary ───────────────────────────────────────────────────
+    # Summary sheet
     ws_sum = wb.create_sheet("Summary")
     ws_sum.sheet_properties.tabColor = "00D4FF"
-    ws_sum.column_dimensions["A"].width = 36
+    ws_sum.column_dimensions["A"].width = 38
     ws_sum.column_dimensions["B"].width = 18
-
-    # Title
     ws_sum["A1"] = "GST Input Reconciliation Report"
     ws_sum["A1"].font = Font(name="Calibri", bold=True, size=16, color="0F172A")
     ws_sum["A1"].fill = PatternFill("solid", fgColor="E0F7FA")
@@ -788,46 +849,41 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
     ws_sum["A2"].fill = PatternFill("solid", fgColor="F3E8FF")
     ws_sum["A3"] = f"Generated: {dt.date.today().strftime('%d-%m-%Y')}"
     ws_sum["A3"].font = Font(name="Calibri", size=9, color="6B7280")
-
-    summary_rows = [
-        (5, "Category",                          "Count",       "0F172A", "FFFFFF", "1E40AF"),
-        (6, "Matched (Fully Reconciled)",         stats.get("total_matched", 0),           "ECFDF5", "065F46", None),
-        (7, "Missing in Books (In 2B not in PR)", stats.get("missing_in_books_count", 0),  "FEF2F2", "991B1B", None),
-        (8, "Missing in GSTR-2B (In PR not 2B)", stats.get("missing_in_gstr2b_count", 0), "FFF7ED", "92400E", None),
-        (9, "Near Match (Review Required)",       stats.get("fuzzy_candidates_count", 0),  "FFFBEB", "92400E", None),
-        (10,"PR Duplicates",                      stats.get("pr_duplicates_count", 0),     "F5F3FF", "4C1D95", None),
-        (11,"GSTR-2B Duplicates",                 stats.get("gstr2b_duplicates_count", 0),"F5F3FF", "4C1D95", None),
-        (12,"Match Rate (%)",                     f"{stats.get('match_rate', 0):.2f}%",   "EFF6FF", "1E3A8A", None),
-    ]
-
-    for row_data in summary_rows:
-        r, label, val, bg, fg, hdr_bg = row_data
-        lbl_cell = ws_sum.cell(r, 1, label)
-        val_cell = ws_sum.cell(r, 2, val)
-        for c in [lbl_cell, val_cell]:
-            c.fill   = PatternFill("solid", fgColor=hdr_bg if hdr_bg else bg)
-            c.font   = Font(name="Calibri", bold=(hdr_bg is not None), size=10,
-                           color=fg if hdr_bg else fg)
-            c.border = thin_border()
-            c.alignment = LEFT
-        val_cell.alignment = CTR
+    for r, label, val, bg, fg, is_hdr in [
+        (5, "Category",                           "Count",                                      "1E40AF", "FFFFFF", True),
+        (6, "Matched (Fully Reconciled)",          stats.get("total_matched", 0),                "ECFDF5", "065F46", False),
+        (7, "Missing in Books (In 2B, not in PR)", stats.get("missing_in_books_count", 0),       "FEF2F2", "991B1B", False),
+        (8, "Missing in GSTR-2B (In PR, not 2B)", stats.get("missing_in_gstr2b_count", 0),      "FFF7ED", "92400E", False),
+        (9, "Near Match (Review Required)",        stats.get("fuzzy_candidates_count", 0),       "FFFBEB", "B45309", False),
+        (10,"PR Duplicates",                       stats.get("pr_duplicates_count", 0),          "F5F3FF", "4C1D95", False),
+        (11,"GSTR-2B Duplicates",                  stats.get("gstr2b_duplicates_count", 0),      "F5F3FF", "4C1D95", False),
+        (12,"Match Rate (%)",                      f"{stats.get('match_rate', 0):.2f}%",         "EFF6FF", "1E3A8A", False),
+    ]:
+        lc = ws_sum.cell(r, 1, label)
+        vc = ws_sum.cell(r, 2, val)
+        for cell in [lc, vc]:
+            cell.fill   = PatternFill("solid", fgColor=bg)
+            cell.font   = Font(name="Calibri", bold=is_hdr, size=10, color=fg)
+            cell.border = thin_border()
+            cell.alignment = LEFT
+        vc.alignment = CTR
         ws_sum.row_dimensions[r].height = 18
 
-    # ── Data sheets ────────────────────────────────────────────────────────
-    write_sheet(wb, "Matched",             matched,    "34D399", "matched")
-    write_sheet(wb, "Missing in Books",    books,      "F87171", "books")
-    write_sheet(wb, "Missing in GSTR-2B",  gstr,       "FB923C", "gstr")
-    write_sheet(wb, "Near Match - Review", fuzzy,      "FBBF24", "near",
-                extra_first_cols=NM_EXTRA)
-    write_sheet(wb, "Duplicates",          dup_all,    "A78BFA", "dup")
-    write_sheet(wb, "Unreconciled",        unrecon,    "94A3B8", "unrecon")
-    write_sheet(wb, "All Records",         all_records,"00D4FF", "all")
+    # Data sheets
+    write_sheet(wb, "Matched",            matched,    "34D399", "matched")
+    write_sheet(wb, "Missing in Books",   books,      "F87171", "books")
+    write_sheet(wb, "Missing in GSTR-2B", gstr,       "FB923C", "gstr")
+    write_near_match_sheet(wb, fuzzy,     "FBBF24")
+    write_sheet(wb, "Duplicates",         dup_all,    "A78BFA", "dup")
+    write_sheet(wb, "Unreconciled",       unrecon,    "94A3B8", "unrecon")
+    write_sheet(wb, "All Records",        all_records,"00D4FF", "all")
+    write_per_books(wb, matched, books, gstr, fuzzy)
+    write_per_gstr2b(wb, matched, books, gstr, fuzzy)
 
     buf = io.BytesIO()
     wb.save(buf)
     log_event("EXPORT", "Sheet-wise Excel report generated")
     return buf.getvalue()
-
 
 
 # ---------------------------------------------------------------------------
@@ -836,30 +892,25 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
 
 def render_reports_page() -> None:
     """Render the Reports export page."""
+    import datetime
 
-    # ── Header + Dashboard button ──────────────────────────────────────────
+    # Header + Back to Dashboard
     hdr_col, dash_col = st.columns([8, 2])
-    hdr_col.markdown(
-        "<h2 style='color:#00D4FF; margin:0;'>Reports</h2>",
-        unsafe_allow_html=True,
-    )
+    hdr_col.markdown("<h2 style='color:#00D4FF; margin:0;'>Reports</h2>", unsafe_allow_html=True)
     if dash_col.button("Back to Dashboard", key="rep_goto_dash", use_container_width=True):
         st.session_state["current_page"] = "Dashboard"
         st.rerun()
 
     recon_results = st.session_state.get("recon_results")
-    master_df     = st.session_state.get("master_df")
 
     if recon_results is None:
         st.markdown(
             "<div style='background:rgba(248,113,113,0.08); border:1px solid #F8717133; "
             "border-radius:10px; padding:24px; text-align:center; margin-top:16px;'>"
             "<div style='color:#F87171; font-size:1.1rem; font-weight:700;'>No reconciliation data yet</div>"
-            "<div style='color:#94A3B8; margin-top:8px;'>"
-            "Complete the full workflow: <strong>Upload Data</strong> → "
-            "<strong>Column Mapping</strong> → <strong>Reconcile</strong> → "
-            "then come back here to download your reports."
-            "</div></div>",
+            "<div style='color:#94A3B8; margin-top:8px;'>Complete the workflow: "
+            "<strong>Upload Data</strong> - <strong>Column Mapping</strong> - "
+            "<strong>Reconcile</strong> - then come back here.</div></div>",
             unsafe_allow_html=True,
         )
         if st.button("Go to Upload Data", type="primary", use_container_width=True, key="rep_goto_upload"):
@@ -869,7 +920,7 @@ def render_reports_page() -> None:
 
     stats = recon_results.get("stats", {})
 
-    # ── Summary bar ────────────────────────────────────────────────────────
+    # Summary KPIs
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Matched",            f"{stats.get('total_matched', 0):,}")
     c2.metric("Missing in Books",   f"{stats.get('missing_in_books_count', 0):,}")
@@ -879,18 +930,17 @@ def render_reports_page() -> None:
 
     st.divider()
 
-    # ── Direct Excel Download ──────────────────────────────────────────────
+    # Excel Download
     st.markdown(
-        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:6px;'>"
+        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:4px;'>"
         "Download Full Reconciliation Report (Excel)</div>",
         unsafe_allow_html=True,
     )
     st.caption(
-        "One Excel file with 8 colour-coded sheets: "
-        "Summary | Matched | Missing in Books | Missing in GSTR-2B | "
-        "Near Match (with Reason & Score) | Duplicates | Unreconciled | All Records"
+        "9 sheets: Summary | Matched | Missing in Books | Missing in GSTR-2B | "
+        "Near Match (full side-by-side + Reason/Score) | Duplicates | Unreconciled | "
+        "All Records | As Per Books | As Per GSTR-2B"
     )
-
     try:
         excel_bytes = _build_sheet_excel(recon_results)
         fname = f"GST_Recon_{datetime.date.today().strftime('%Y%m%d')}.xlsx"
@@ -908,29 +958,21 @@ def render_reports_page() -> None:
 
     st.divider()
 
-    # ── Data preview tabs ──────────────────────────────────────────────────
-    PR_COLS = ["vendor_name", "gstin", "invoice_number", "invoice_date",
-               "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
+    # Preview tabs
+    WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
+            "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
 
-    def _clean_cols(df: pd.DataFrame) -> pd.DataFrame:
-        """Keep only readable columns, prefer _pr suffix."""
-        if df is None or df.empty:
-            return pd.DataFrame()
-        result = {}
-        for col in PR_COLS:
-            if col + "_pr" in df.columns:
-                result[col] = df[col + "_pr"]
-            elif col in df.columns:
-                result[col] = df[col]
-        if "vendor_name_gstr2b" in df.columns and "vendor_name" not in result:
-            result["vendor_name"] = df["vendor_name_gstr2b"]
-        return pd.DataFrame(result) if result else df.copy()
-
-    def _show(df, label):
-        if df is None or (hasattr(df, 'empty') and df.empty):
+    def _clean_show(df, label):
+        if df is None or (hasattr(df, "empty") and df.empty):
             st.info(f"No {label} records.")
             return
-        st.dataframe(_clean_cols(df), use_container_width=True, hide_index=True)
+        # Keep PR cols (or plain) for display
+        pr_cols = [c + "_pr" for c in WANT if c + "_pr" in df.columns]
+        plain   = [c for c in WANT if c in df.columns and c + "_pr" not in df.columns]
+        use = pr_cols if pr_cols else plain
+        out = df[use].copy() if use else df.copy()
+        out.columns = [c.replace("_pr", "").replace("_", " ").title() for c in out.columns]
+        st.dataframe(out, use_container_width=True, hide_index=True)
         st.caption(f"{len(df):,} records")
 
     tab_m, tab_b, tab_g, tab_nm, tab_dup = st.tabs([
@@ -942,65 +984,64 @@ def render_reports_page() -> None:
     ])
 
     with tab_m:
-        st.caption("Invoices that exist in BOTH Purchase Register and GSTR-2B.")
-        _show(recon_results.get("matched"), "Matched")
+        st.caption("Invoices that exist in BOTH Purchase Register and GSTR-2B with matching details.")
+        _clean_show(recon_results.get("matched"), "Matched")
 
     with tab_b:
-        st.caption("Invoices in GSTR-2B but NOT in your Purchase Register (Books).")
-        _show(recon_results.get("missing_in_books"), "Missing in Books")
+        st.caption("Invoices present in GSTR-2B but NOT found in your Purchase Register (Books).")
+        _clean_show(recon_results.get("missing_in_books"), "Missing in Books")
 
     with tab_g:
-        st.caption("Invoices in your Purchase Register (Books) but NOT in GSTR-2B.")
-        _show(recon_results.get("missing_in_gstr2b"), "Missing in GSTR-2B")
+        st.caption("Invoices present in your Purchase Register (Books) but NOT found in GSTR-2B.")
+        _clean_show(recon_results.get("missing_in_gstr2b"), "Missing in GSTR-2B")
 
     with tab_nm:
         st.markdown(
             "<div style='background:rgba(251,191,36,0.08); border:1px solid #FBBF2433; "
             "border-radius:8px; padding:10px 14px; margin-bottom:10px;'>"
-            "<strong style='color:#FBBF24;'>What is Near Match?</strong>"
+            "<strong style='color:#FBBF24;'>Near Match (Review Required)</strong>"
             "<div style='color:#94A3B8; font-size:0.83rem; margin-top:4px;'>"
-            "Found in both files with <b>slight differences</b> (e.g. invoice number format or "
-            "small value gaps). The <b>Match Reason</b> column shows exactly what differs. "
-            "Verify manually and decide if matched or unmatched."
+            "Found in both files with slight differences (e.g. invoice format INV-001 vs INV/001). "
+            "<b>Match Reason</b> and <b>Similarity %</b> explain the difference. "
+            "PR data shown first (Books), then GSTR-2B data. Verify and decide manually."
             "</div></div>",
             unsafe_allow_html=True,
         )
         nm_df = recon_results.get("fuzzy_candidates")
-        if nm_df is None or (hasattr(nm_df, 'empty') and nm_df.empty):
+        if nm_df is None or (hasattr(nm_df, "empty") and nm_df.empty):
             st.info("No Near Match records.")
         else:
-            display_cols = {}
-            for c in ["Match Reason", "Similarity %", "confidence"]:
-                if c in nm_df.columns:
-                    display_cols[c] = nm_df[c]
-            for c in ["vendor_name_pr", "gstin_pr", "invoice_number_pr", "invoice_date_pr",
-                      "total_gst_pr", "invoice_value_pr"]:
-                if c in nm_df.columns:
-                    display_cols[c.replace("_pr", " (Books)")] = nm_df[c]
-            for c in ["invoice_number_gstr2b", "total_gst_gstr2b"]:
-                if c in nm_df.columns:
-                    display_cols[c.replace("_gstr2b", " (2B)")] = nm_df[c]
-            st.dataframe(
-                pd.DataFrame(display_cols) if display_cols else nm_df,
-                use_container_width=True, hide_index=True
-            )
+            # Full side-by-side: reason cols + PR cols + GSTR-2B cols
+            REASON = ["Match Reason", "Similarity %", "fuzzy_score", "confidence", "match_tier"]
+            pr_cols  = [c + "_pr"     for c in WANT if c + "_pr"     in nm_df.columns]
+            gst_cols = [c + "_gstr2b" for c in WANT if c + "_gstr2b" in nm_df.columns]
+            reason_cols = [c for c in REASON if c in nm_df.columns]
+            show_cols = reason_cols + pr_cols + gst_cols
+            if not show_cols:
+                show_cols = [c for c in nm_df.columns if not c.startswith("_")]
+            disp = nm_df[show_cols].copy()
+            disp.columns = [
+                c.replace("_pr", " (Books)").replace("_gstr2b", " (2B)")
+                 .replace("_", " ").strip().title()
+                for c in disp.columns
+            ]
+            st.dataframe(disp, use_container_width=True, hide_index=True)
             st.caption(f"{len(nm_df):,} near match records — verify each row manually")
 
     with tab_dup:
         st.caption("Duplicate invoice numbers detected within the same file.")
-        pr_dup  = recon_results.get("pr_duplicates",    pd.DataFrame())
+        pr_dup  = recon_results.get("pr_duplicates",     pd.DataFrame())
         gst_dup = recon_results.get("gstr2b_duplicates", pd.DataFrame())
         if isinstance(pr_dup, pd.DataFrame) and not pr_dup.empty:
             st.markdown("**Purchase Register Duplicates**")
-            _show(pr_dup, "PR Duplicates")
+            _clean_show(pr_dup, "PR Duplicates")
         if isinstance(gst_dup, pd.DataFrame) and not gst_dup.empty:
             st.markdown("**GSTR-2B Duplicates**")
-            _show(gst_dup, "GSTR-2B Duplicates")
+            _clean_show(gst_dup, "GSTR-2B Duplicates")
 
-    # ── Footer ─────────────────────────────────────────────────────────────
     st.markdown(
         "<div style='text-align:center; color:#374151; font-size:0.75rem; margin-top:24px;'>"
-        "Prepared &amp; Developed by <strong>Karthik LVN</strong> &nbsp;·&nbsp; "
-        "© 2026 All Rights Reserved</div>",
+        "Prepared &amp; Developed by <strong>Karthik LVN</strong> &nbsp;&#183;&nbsp; "
+        "2026 All Rights Reserved</div>",
         unsafe_allow_html=True,
     )
