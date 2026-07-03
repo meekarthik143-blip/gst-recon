@@ -618,10 +618,25 @@ def render_reconciliation_page() -> None:
             )
 
         elapsed = time.time() - start_time
-        progress_bar.progress(100, text="✅ Complete!")
+        progress_bar.progress(100, text="Complete!")
 
         st.session_state["recon_results"] = results
         st.session_state["recon_elapsed"] = elapsed
+
+        # Build master_df so dashboard KPIs update
+        frames = []
+        if not results.get("matched", pd.DataFrame()).empty:
+            frames.append(results["matched"].assign(status="Perfect Match"))
+        if not results.get("missing_in_books", pd.DataFrame()).empty:
+            frames.append(results["missing_in_books"].assign(status="Missing in Books"))
+        if not results.get("missing_in_gstr2b", pd.DataFrame()).empty:
+            frames.append(results["missing_in_gstr2b"].assign(status="Missing in GSTR-2B"))
+        if not results.get("fuzzy_candidates", pd.DataFrame()).empty:
+            frames.append(results["fuzzy_candidates"].assign(status="Fuzzy Match"))
+        if frames:
+            st.session_state["master_df"] = pd.concat(frames, ignore_index=True)
+        else:
+            st.session_state["master_df"] = pd.DataFrame()
 
         from modules.audit import log_event
         log_event(
@@ -695,10 +710,10 @@ def render_reconciliation_page() -> None:
 
         st.divider()
         if st.button(
-            "➡️ View Full Reconciliation Report",
+            "View Full Report & Download Excel",
             type="primary",
             use_container_width=True,
             key="goto_recon_results",
         ):
-            st.session_state["current_page"] = "Reconciliation Results"
+            st.session_state["current_page"] = "Reports"
             st.rerun()

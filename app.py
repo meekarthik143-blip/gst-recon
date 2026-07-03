@@ -633,34 +633,15 @@ def render_upload_and_template_page() -> None:
         ws.row_dimensions[1].height = 22
         buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
-    col_fields = " &nbsp;|&nbsp; ".join([
-        "Vendor Name", "GSTIN", "Invoice No", "Invoice Date",
-        "Taxable Value", "CGST", "SGST", "IGST", "CESS", "Total GST", "Invoice Value"
-    ])
-
     tc1, tc2 = st.columns(2, gap="medium")
 
     with tc1:
         st.markdown(
-            f"""
-            <div style="background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(0,212,255,0.02));
-                 border:1px solid rgba(0,212,255,0.3); border-radius:14px; padding:18px 20px;">
-                <div style="font-size:1.1rem; font-weight:700; color:#00D4FF; margin-bottom:6px;">
-                    Purchase Register Template
-                </div>
-                <div style="font-size:0.72rem; color:#64748B; margin-bottom:10px;">
-                    {col_fields}
-                </div>
-                <div style="display:flex; gap:8px; margin-bottom:4px;">
-                    <span style="background:rgba(0,212,255,0.15); color:#00D4FF; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">11 Columns</span>
-                    <span style="background:rgba(52,211,153,0.15); color:#34D399; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">3 Sample Rows</span>
-                    <span style="background:rgba(167,139,250,0.15); color:#A78BFA; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">Excel Format</span>
-                </div>
-            </div>
-            """,
+            "<div style=\"background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.3);"
+            " border-radius:12px; padding:16px 20px; text-align:center;\">"
+            "<div style=\"font-size:1rem; font-weight:700; color:#00D4FF; margin-bottom:4px;\">Purchase Register Template</div>"
+            "<div style=\"font-size:0.78rem; color:#64748B;\">Excel template with required columns &amp; 3 sample rows</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
         st.download_button(
@@ -673,25 +654,11 @@ def render_upload_and_template_page() -> None:
 
     with tc2:
         st.markdown(
-            f"""
-            <div style="background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(167,139,250,0.02));
-                 border:1px solid rgba(167,139,250,0.3); border-radius:14px; padding:18px 20px;">
-                <div style="font-size:1.1rem; font-weight:700; color:#A78BFA; margin-bottom:6px;">
-                    GSTR-2B Template
-                </div>
-                <div style="font-size:0.72rem; color:#64748B; margin-bottom:10px;">
-                    {col_fields}
-                </div>
-                <div style="display:flex; gap:8px; margin-bottom:4px;">
-                    <span style="background:rgba(167,139,250,0.15); color:#A78BFA; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">11 Columns</span>
-                    <span style="background:rgba(52,211,153,0.15); color:#34D399; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">3 Sample Rows</span>
-                    <span style="background:rgba(251,191,36,0.15); color:#FBBF24; border-radius:20px;
-                          padding:2px 10px; font-size:0.7rem;">Excel Format</span>
-                </div>
-            </div>
-            """,
+            "<div style=\"background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.3);"
+            " border-radius:12px; padding:16px 20px; text-align:center;\">"
+            "<div style=\"font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:4px;\">GSTR-2B Template</div>"
+            "<div style=\"font-size:0.78rem; color:#64748B;\">Excel template with required columns &amp; 3 sample rows</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
         st.download_button(

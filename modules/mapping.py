@@ -407,7 +407,7 @@ def render_mapping_page() -> None:
     """Render the full Column Mapping page with tabs for PR and GSTR-2B."""
 
     st.markdown(
-        "<h2 style='color:#00D4FF;'>🗂️ Column Mapping</h2>",
+        "<h2 style='color:#00D4FF;'>Column Mapping</h2>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -416,8 +416,46 @@ def render_mapping_page() -> None:
         unsafe_allow_html=True,
     )
 
+    # ── One-click Apply Both ───────────────────────────────────────────────
+    pr_df   = st.session_state.get("pr_df")
+    gstr_df = st.session_state.get("gstr2b_df")
+
+    if pr_df is not None and gstr_df is not None:
+        if st.button(
+            "Apply Auto-Mapping for BOTH Files (Recommended)",
+            type="primary",
+            use_container_width=True,
+            key="apply_both_btn",
+        ):
+            errors = []
+            for src_label, df_key, mapped_key, src_tag in [
+                ("Purchase Register", "pr_df", "pr_mapped", "PR"),
+                ("GSTR-2B", "gstr2b_df", "gstr2b_mapped", "GSTR2B"),
+            ]:
+                raw_df = st.session_state.get(df_key)
+                if raw_df is None:
+                    errors.append(f"{src_label} not uploaded")
+                    continue
+                try:
+                    auto_m = auto_detect_columns(list(raw_df.columns)) or {}
+                    mapped_df = apply_mapping(raw_df, auto_m, source_tag=src_tag)
+                    cleaned_df, summary = clean_dataframe(mapped_df, auto_m)
+                    st.session_state[mapped_key] = cleaned_df
+                    st.session_state[f"cleaning_summary_{src_tag}"] = summary
+                    log_event("PROCESS", f"Auto-mapping applied for {src_label}: {len(cleaned_df)} rows")
+                except Exception as e:
+                    errors.append(f"{src_label}: {e}")
+            if errors:
+                st.error("Errors: " + " | ".join(errors))
+            else:
+                st.success("Both files mapped and cleaned successfully!")
+                st.rerun()
+
+        st.markdown("<div style='text-align:center; color:#64748B; font-size:0.8rem; margin:-8px 0 12px 0;'>"
+                    "— or map columns manually below —</div>", unsafe_allow_html=True)
+
     tab_pr, tab_gstr = st.tabs(
-        ["📋 Purchase Register Mapping", "🏛️ GSTR-2B Mapping"]
+        ["Purchase Register Mapping", "GSTR-2B Mapping"]
     )
 
     with tab_pr:
@@ -443,14 +481,14 @@ def render_mapping_page() -> None:
     gstr_mapped = st.session_state.get("gstr2b_mapped") is not None
 
     if pr_mapped and gstr_mapped:
-        st.success("✅ Both files are mapped and cleaned. Ready for reconciliation!")
+        st.success("Both files mapped and cleaned. Ready for reconciliation!")
         if st.button(
-            "➡️ Proceed to Reconciliation",
+            "Proceed to Reconcile",
             type="primary",
             use_container_width=True,
             key="proceed_recon_btn",
         ):
-            st.session_state["current_page"] = "Reconciliation"
+            st.session_state["current_page"] = "Reconcile"
             st.rerun()
     else:
         missing = []
@@ -459,5 +497,5 @@ def render_mapping_page() -> None:
         if not gstr_mapped:
             missing.append("GSTR-2B")
         st.warning(
-            f"⚠️ Please apply mapping for: **{', '.join(missing)}** before proceeding."
+            f"Please apply mapping for: {', '.join(missing)} before proceeding."
         )

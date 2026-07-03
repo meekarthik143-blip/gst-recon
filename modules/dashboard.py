@@ -68,29 +68,26 @@ def _kpi_card_html(
     bg_color: str = "rgba(26,26,46,0.9)",
 ) -> str:
     """Render a styled KPI card as HTML."""
-    return f"""
-    <div style="
-        background: {bg_color};
-        border: 1px solid {color}44;
-        border-left: 4px solid {color};
-        border-radius: 12px;
-        padding: 16px 14px;
-        margin: 4px 0;
-        box-shadow: 0 4px 16px {color}22, 0 1px 4px rgba(0,0,0,0.3);
-        transition: transform 0.2s;
-    ">
-        <div style="display:flex; align-items:center; gap:10px;">
-            <div style="font-size:1.8rem;">{icon}</div>
-            <div>
-                <div style="font-size:1.4rem; font-weight:800; color:{color}; line-height:1.2;">
-                    {value}
-                </div>
-                <div style="font-size:0.78rem; color:#94A3B8; margin-top:2px;">{label}</div>
-                {f'<div style="font-size:0.72rem; color:#64748B;">{subtitle}</div>' if subtitle else ''}
-            </div>
-        </div>
-    </div>
-    """
+    subtitle_html = (
+        "<div style=\"font-size:0.72rem; color:#64748B; margin-top:2px;\">" + subtitle + "</div>"
+        if subtitle else ""
+    )
+    return (
+        "<div style=\"background:" + bg_color + "; border:1px solid " + color + "44;"
+        " border-left:4px solid " + color + "; border-radius:12px; padding:16px 14px;"
+        " margin:4px 0; box-shadow:0 4px 16px " + color + "22;\">"
+        "<div style=\"display:flex; align-items:center; gap:10px;\">"
+        "<div style=\"font-size:1.8rem;\">" + icon + "</div>"
+        "<div>"
+        "<div style=\"font-size:1.4rem; font-weight:800; color:" + color + "; line-height:1.2;\">"
+        + value +
+        "</div>"
+        "<div style=\"font-size:0.78rem; color:#94A3B8; margin-top:2px;\">" + label + "</div>"
+        + subtitle_html +
+        "</div>"
+        "</div>"
+        "</div>"
+    )
 
 
 # ---------------------------------------------------------------------------
