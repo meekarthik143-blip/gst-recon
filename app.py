@@ -546,6 +546,38 @@ def render_upload_and_template_page() -> None:
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
 
+    TEMPLATE_COLS = [
+        "vendor_name", "gstin", "invoice_number", "invoice_date",
+        "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value",
+    ]
+
+    def make_template(sheet_name: str) -> bytes:
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = sheet_name
+        hf = PatternFill("solid", fgColor="0D1B2A")
+        hfont = Font(name="Calibri", bold=True, color="00D4FF", size=11)
+        center = Alignment(horizontal="center", vertical="center")
+        samples = {
+            "vendor_name":   ["ABC Traders Pvt Ltd", "XYZ Industries", "PQR Enterprises"],
+            "gstin":         ["29ABCDE1234F1Z5", "27XYZPQ5678G1Z3", "33PQRST9012H1Z7"],
+            "invoice_number":["INV/2024/001", "INV/2024/002", "INV/2024/003"],
+            "invoice_date":  ["01-04-2024", "05-04-2024", "10-04-2024"],
+            "taxable_value": [100000, 250000, 75000],
+            "cgst": [9000, 22500, 6750], "sgst": [9000, 22500, 6750],
+            "igst": [0, 0, 0], "cess": [0, 0, 0],
+            "total_gst": [18000, 45000, 13500], "invoice_value": [118000, 295000, 88500],
+        }
+        rf = PatternFill("solid", fgColor="1A1A2E")
+        rfont = Font(name="Calibri", color="EAEAEA", size=10)
+        for ci, col in enumerate(TEMPLATE_COLS, 1):
+            c = ws.cell(1, ci, col); c.font = hfont; c.fill = hf; c.alignment = center
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(len(col)+4, 18)
+        for ri in range(3):
+            for ci, col in enumerate(TEMPLATE_COLS, 1):
+                v = samples.get(col, ["","",""])
+                c = ws.cell(ri+2, ci, v[ri] if ri < len(v) else ""); c.font = rfont; c.fill = rf
+        ws.row_dimensions[1].height = 22
+        buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+
     pr_done   = st.session_state.get("pr_df") is not None
     gstr_done = st.session_state.get("gstr2b_df") is not None
 
@@ -587,94 +619,10 @@ def render_upload_and_template_page() -> None:
     )
 
     # ── Template Download Section ─────────────────────────────────────────
-    st.markdown(
-        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:12px;'>"
-        "STEP 1 &nbsp; Download Excel Templates</div>",
-        unsafe_allow_html=True,
-    )
-
-    TEMPLATE_COLS = [
-        "vendor_name", "gstin", "invoice_number", "invoice_date",
-        "taxable_value", "cgst", "sgst", "igst", "cess",
-        "total_gst", "invoice_value",
-    ]
-
-    def make_template(sheet_name: str) -> bytes:
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = sheet_name
-        hf = PatternFill("solid", fgColor="0D1B2A")
-        hfont = Font(name="Calibri", bold=True, color="00D4FF", size=11)
-        center = Alignment(horizontal="center", vertical="center")
-        samples = {
-            "vendor_name":   ["ABC Traders Pvt Ltd", "XYZ Industries", "PQR Enterprises"],
-            "gstin":         ["29ABCDE1234F1Z5", "27XYZPQ5678G1Z3", "33PQRST9012H1Z7"],
-            "invoice_number":["INV/2024/001", "INV/2024/002", "INV/2024/003"],
-            "invoice_date":  ["01-04-2024", "05-04-2024", "10-04-2024"],
-            "taxable_value": [100000, 250000, 75000],
-            "cgst":          [9000, 22500, 6750],
-            "sgst":          [9000, 22500, 6750],
-            "igst":          [0, 0, 0],
-            "cess":          [0, 0, 0],
-            "total_gst":     [18000, 45000, 13500],
-            "invoice_value": [118000, 295000, 88500],
-        }
-        rf = PatternFill("solid", fgColor="1A1A2E")
-        rfont = Font(name="Calibri", color="EAEAEA", size=10)
-        for ci, col in enumerate(TEMPLATE_COLS, 1):
-            c = ws.cell(1, ci, col)
-            c.font = hfont; c.fill = hf; c.alignment = center
-            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(len(col)+4, 18)
-        for ri in range(3):
-            for ci, col in enumerate(TEMPLATE_COLS, 1):
-                v = samples.get(col, ["","",""])
-                c = ws.cell(ri+2, ci, v[ri] if ri < len(v) else "")
-                c.font = rfont; c.fill = rf
-        ws.row_dimensions[1].height = 22
-        buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
-
-    tc1, tc2 = st.columns(2, gap="medium")
-
-    with tc1:
-        st.markdown(
-            "<div style=\"background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.3);"
-            " border-radius:12px; padding:16px 20px; text-align:center;\">"
-            "<div style=\"font-size:1rem; font-weight:700; color:#00D4FF; margin-bottom:4px;\">Purchase Register Template</div>"
-            "<div style=\"font-size:0.78rem; color:#64748B;\">Excel template with required columns &amp; 3 sample rows</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.download_button(
-            label="Download Purchase Register Template",
-            data=make_template("Purchase Register"),
-            file_name="Purchase_Register_Template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True, key="dl_pr_template",
-        )
-
-    with tc2:
-        st.markdown(
-            "<div style=\"background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.3);"
-            " border-radius:12px; padding:16px 20px; text-align:center;\">"
-            "<div style=\"font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:4px;\">GSTR-2B Template</div>"
-            "<div style=\"font-size:0.78rem; color:#64748B;\">Excel template with required columns &amp; 3 sample rows</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.download_button(
-            label="Download GSTR-2B Template",
-            data=make_template("GSTR-2B"),
-            file_name="GSTR2B_Template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True, key="dl_gstr_template",
-        )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
     # ── Upload Section ────────────────────────────────────────────────────
     st.markdown(
         "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:12px;'>"
-        "STEP 3 &nbsp; Upload Your Files</div>",
+        "Upload Your Files</div>",
         unsafe_allow_html=True,
     )
 
@@ -723,7 +671,7 @@ def render_upload_and_template_page() -> None:
             "<div style='background:rgba(52,211,153,0.1); border:1px solid #34D39944; "
             "border-radius:10px; padding:14px 20px; text-align:center; color:#34D399; "
             "font-weight:700; font-size:1rem; margin-bottom:12px;'>"
-            "Both files uploaded successfully! Click below to continue.</div>",
+            "Both files uploaded! Click below to continue.</div>",
             unsafe_allow_html=True,
         )
         if st.button("Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
@@ -739,6 +687,41 @@ def render_upload_and_template_page() -> None:
             f"Waiting for: <strong style='color:#F87171;'>{' and '.join(pending)}</strong></div>",
             unsafe_allow_html=True,
         )
+
+    # ── Template Download (at bottom — download once, reuse always) ────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("Need a template? Download Excel Templates here"):
+        tc1, tc2 = st.columns(2, gap="medium")
+        with tc1:
+            st.markdown(
+                "<div style='background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.25);"
+                " border-radius:10px; padding:14px; text-align:center;'>"
+                "<div style='color:#00D4FF; font-weight:700;'>Purchase Register Template</div>"
+                "<div style='color:#64748B; font-size:0.75rem; margin-top:4px;'>11 columns with 3 sample rows</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button(
+                "Download PR Template", make_template("Purchase Register"),
+                "Purchase_Register_Template.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="dl_pr_template",
+            )
+        with tc2:
+            st.markdown(
+                "<div style='background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.25);"
+                " border-radius:10px; padding:14px; text-align:center;'>"
+                "<div style='color:#A78BFA; font-weight:700;'>GSTR-2B Template</div>"
+                "<div style='color:#64748B; font-size:0.75rem; margin-top:4px;'>11 columns with 3 sample rows</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button(
+                "Download GSTR-2B Template", make_template("GSTR-2B"),
+                "GSTR2B_Template.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="dl_gstr_template",
+            )
 
 
 # ---------------------------------------------------------------------------
