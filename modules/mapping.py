@@ -297,17 +297,19 @@ def _render_mapping_tab(
 
     # ── Auto-detect ────────────────────────────────────────────────────────
     auto_key = f"auto_mapping_{source_tag}"
-    if auto_key not in st.session_state:
-        st.session_state[auto_key] = auto_detect_columns(df_cols)
+    if auto_key not in st.session_state or not isinstance(st.session_state.get(auto_key), dict):
+        st.session_state[auto_key] = auto_detect_columns(df_cols) or {}
 
-    auto_map = st.session_state[auto_key]
+    auto_map: dict = st.session_state[auto_key]
+    if not isinstance(auto_map, dict):
+        auto_map = {}
+        st.session_state[auto_key] = auto_map
 
-    # Check if there is a saved profile
+    # ── Saved profile / Re-detect buttons ─────────────────────────────────
     saved_profile = load_mapping_profile(source_tag)
-
     col_load, col_detect = st.columns([1, 1])
     if saved_profile and col_load.button(
-        "📂 Load Saved Profile", key=f"load_profile_{source_tag}"
+        "Load Saved Profile", key=f"load_profile_{source_tag}"
     ):
         st.session_state[auto_key] = {
             k: v for k, v in saved_profile.items() if v in df_cols or v is None
@@ -315,8 +317,8 @@ def _render_mapping_tab(
         st.success("Saved profile loaded!")
         st.rerun()
 
-    if col_detect.button("🔍 Re-run Auto Detection", key=f"redetect_{source_tag}"):
-        st.session_state[auto_key] = auto_detect_columns(df_cols)
+    if col_detect.button("Re-run Auto Detection", key=f"redetect_{source_tag}"):
+        st.session_state[auto_key] = auto_detect_columns(df_cols) or {}
         st.rerun()
 
     st.markdown(
@@ -329,19 +331,19 @@ def _render_mapping_tab(
     user_mapping: dict[str, Optional[str]] = {}
 
     for std_col, label in COLUMN_LABELS.items():
-        detected = auto_map.get(std_col)
+        detected = auto_map.get(std_col) if auto_map else None
         if detected and detected in df_cols:
             default_idx = options.index(detected)
-            indicator = "✅"
+            indicator = "OK"
             help_text = f"Auto-detected: '{detected}'"
         else:
             default_idx = 0
-            indicator = "⚠️"
+            indicator = "?"
             help_text = "Not auto-detected — please select manually if available."
 
         col_label, col_select = st.columns([2, 3])
         col_label.markdown(
-            f"<div style='padding-top:8px;'>{indicator} <strong>{label}</strong></div>",
+            f"<div style='padding-top:8px;'><b>{indicator}</b> {label}</div>",
             unsafe_allow_html=True,
         )
         selected = col_select.selectbox(
