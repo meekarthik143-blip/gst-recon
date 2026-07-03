@@ -1,0 +1,76 @@
+# GST Input Reconciliation System — Python .gitignore
+# Prepared & Developed by Karthik LVN
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual Environment ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ── Streamlit Secrets (NEVER commit these!) ──────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Local Data (user data, database, uploads — DO NOT commit) ────────────────
+data/users.json
+data/audit.db
+data/settings.json
+data/mapping_profile.json
+data/*.db
+data/*.sqlite
+
+# ── Uploads & Temp Files ─────────────────────────────────────────────────────
+uploads/
+temp/
+exports/
+*.xlsx
+*.csv
+*.pdf
+
+# ── Sample Data (keep in repo for testing) ───────────────────────────────────
+# sample_data/*.xlsx   <- commented out: keep sample files
+
+# ── OS Files ─────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Test Artifacts ───────────────────────────────────────────────────────────
+test_pipeline.py
+.pytest_cache/
+htmlcov/
+.coverage
+
+# ── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
