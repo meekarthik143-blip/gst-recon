@@ -543,68 +543,73 @@ def route_page(page: str) -> None:
 def render_upload_and_template_page() -> None:
     """Upload page with downloadable Excel templates and close button."""
     import io
-    import pandas as pd
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
 
-    # ── Close / Done button ───────────────────────────────────────────
-    hdr, close_col = st.columns([8, 1])
+    pr_done   = st.session_state.get("pr_df") is not None
+    gstr_done = st.session_state.get("gstr2b_df") is not None
+
+    # ── Page header + Close button ────────────────────────────────────────
+    hdr, close_col = st.columns([9, 1])
     hdr.markdown(
-        "<h2 style='color:#00D4FF; margin:0;'>&#128228; Upload Data</h2>",
+        "<h2 style='color:#00D4FF; margin:0;'>Upload Data</h2>",
         unsafe_allow_html=True,
     )
-    if close_col.button("✖ Close", key="close_upload"):
+    if close_col.button("Close", key="close_upload"):
         st.session_state["current_page"] = "Dashboard"
         st.rerun()
 
+    # ── Step tracker ──────────────────────────────────────────────────────
+    s1_c = "#00D4FF"
+    s2_c = "#00D4FF" if (pr_done or gstr_done) else "#374151"
+    s3_c = "#34D399" if (pr_done and gstr_done) else "#374151"
     st.markdown(
-        "<p style='color:#94A3B8;'>Step 1: Download the template &nbsp;|&nbsp; "
-        "Step 2: Fill your data &nbsp;|&nbsp; Step 3: Upload both files</p>",
+        f"""
+        <div style="display:flex; align-items:center; gap:0; margin:12px 0 24px 0;">
+            <div style="background:{s1_c}; color:#000; border-radius:50%; width:28px; height:28px;
+                 display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem;">1</div>
+            <div style="flex:1; height:3px; background:{s2_c}; margin:0 4px;"></div>
+            <div style="background:{s2_c}; color:#{'000' if pr_done or gstr_done else 'fff'}; border-radius:50%;
+                 width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+                 font-weight:700; font-size:0.85rem;">2</div>
+            <div style="flex:1; height:3px; background:{s3_c}; margin:0 4px;"></div>
+            <div style="background:{s3_c}; color:#{'000' if pr_done and gstr_done else 'fff'}; border-radius:50%;
+                 width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+                 font-weight:700; font-size:0.85rem;">3</div>
+        </div>
+        <div style="display:flex; margin-bottom:24px; gap:0;">
+            <div style="flex:1; color:{s1_c}; font-size:0.75rem; font-weight:600;">Download Template</div>
+            <div style="flex:1; color:{s2_c}; font-size:0.75rem; font-weight:600; text-align:center;">Fill Your Data</div>
+            <div style="flex:1; color:{s3_c}; font-size:0.75rem; font-weight:600; text-align:right;">Upload Files</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    # ── Template Download Section ────────────────────────────────────
+    # ── Template Download Section ─────────────────────────────────────────
     st.markdown(
-        "<h4 style='color:#A78BFA;'>&#11015; Download Templates</h4>",
+        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:12px;'>"
+        "STEP 1 &nbsp; Download Excel Templates</div>",
         unsafe_allow_html=True,
     )
 
-    PR_COLUMNS = [
+    TEMPLATE_COLS = [
         "vendor_name", "gstin", "invoice_number", "invoice_date",
         "taxable_value", "cgst", "sgst", "igst", "cess",
         "total_gst", "invoice_value",
     ]
-    GSTR_COLUMNS = [
-        "vendor_name", "gstin", "invoice_number", "invoice_date",
-        "taxable_value", "cgst", "sgst", "igst", "cess",
-        "total_gst", "invoice_value",
-    ]
 
-    def make_template(columns: list, sheet_name: str, sample_rows: int = 3) -> bytes:
-        """Create a styled Excel template with sample rows."""
+    def make_template(sheet_name: str) -> bytes:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = sheet_name
-
-        # Header row styling
-        header_fill = PatternFill("solid", fgColor="0D1B2A")
-        header_font = Font(name="Calibri", bold=True, color="00D4FF", size=11)
+        hf = PatternFill("solid", fgColor="0D1B2A")
+        hfont = Font(name="Calibri", bold=True, color="00D4FF", size=11)
         center = Alignment(horizontal="center", vertical="center")
-
-        for ci, col in enumerate(columns, 1):
-            cell = ws.cell(1, ci, col)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = center
-            ws.column_dimensions[
-                openpyxl.utils.get_column_letter(ci)
-            ].width = max(len(col) + 4, 18)
-
-        # Sample rows
         samples = {
-            "vendor_name":   ["ABC Traders", "XYZ Pvt Ltd", "PQR Enterprises"],
+            "vendor_name":   ["ABC Traders Pvt Ltd", "XYZ Industries", "PQR Enterprises"],
             "gstin":         ["29ABCDE1234F1Z5", "27XYZPQ5678G1Z3", "33PQRST9012H1Z7"],
-            "invoice_number":["INV-001", "INV-002", "INV-003"],
+            "invoice_number":["INV/2024/001", "INV/2024/002", "INV/2024/003"],
             "invoice_date":  ["01-04-2024", "05-04-2024", "10-04-2024"],
             "taxable_value": [100000, 250000, 75000],
             "cgst":          [9000, 22500, 6750],
@@ -614,87 +619,159 @@ def render_upload_and_template_page() -> None:
             "total_gst":     [18000, 45000, 13500],
             "invoice_value": [118000, 295000, 88500],
         }
-        row_fill = PatternFill("solid", fgColor="1A1A2E")
-        row_font = Font(name="Calibri", color="EAEAEA", size=10)
-
-        for ri in range(sample_rows):
-            for ci, col in enumerate(columns, 1):
-                val = samples.get(col, ["", "", ""])
-                cell = ws.cell(ri + 2, ci, val[ri] if ri < len(val) else "")
-                cell.font = row_font
-                cell.fill = row_fill
-
+        rf = PatternFill("solid", fgColor="1A1A2E")
+        rfont = Font(name="Calibri", color="EAEAEA", size=10)
+        for ci, col in enumerate(TEMPLATE_COLS, 1):
+            c = ws.cell(1, ci, col)
+            c.font = hfont; c.fill = hf; c.alignment = center
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(len(col)+4, 18)
+        for ri in range(3):
+            for ci, col in enumerate(TEMPLATE_COLS, 1):
+                v = samples.get(col, ["","",""])
+                c = ws.cell(ri+2, ci, v[ri] if ri < len(v) else "")
+                c.font = rfont; c.fill = rf
         ws.row_dimensions[1].height = 22
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
+        buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
-    tc1, tc2 = st.columns(2)
+    col_fields = " &nbsp;|&nbsp; ".join([
+        "Vendor Name", "GSTIN", "Invoice No", "Invoice Date",
+        "Taxable Value", "CGST", "SGST", "IGST", "CESS", "Total GST", "Invoice Value"
+    ])
+
+    tc1, tc2 = st.columns(2, gap="medium")
+
     with tc1:
         st.markdown(
-            "<div style='background:rgba(0,212,255,0.05); border:1px solid #00D4FF33; "
-            "border-radius:10px; padding:14px; text-align:center;'>"
-            "<div style='color:#00D4FF; font-weight:700;'>&#128196; Purchase Register Template</div>"
-            "<div style='color:#64748B; font-size:0.8rem; margin:6px 0;'>11 standard columns with sample data</div>"
-            "</div>",
+            f"""
+            <div style="background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(0,212,255,0.02));
+                 border:1px solid rgba(0,212,255,0.3); border-radius:14px; padding:18px 20px;">
+                <div style="font-size:1.1rem; font-weight:700; color:#00D4FF; margin-bottom:6px;">
+                    Purchase Register Template
+                </div>
+                <div style="font-size:0.72rem; color:#64748B; margin-bottom:10px;">
+                    {col_fields}
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:4px;">
+                    <span style="background:rgba(0,212,255,0.15); color:#00D4FF; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">11 Columns</span>
+                    <span style="background:rgba(52,211,153,0.15); color:#34D399; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">3 Sample Rows</span>
+                    <span style="background:rgba(167,139,250,0.15); color:#A78BFA; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">Excel Format</span>
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
         st.download_button(
-            label="⬇ Download PR Template",
-            data=make_template(PR_COLUMNS, "Purchase Register"),
+            label="Download Purchase Register Template",
+            data=make_template("Purchase Register"),
             file_name="Purchase_Register_Template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key="dl_pr_template",
+            use_container_width=True, key="dl_pr_template",
         )
 
     with tc2:
         st.markdown(
-            "<div style='background:rgba(167,139,250,0.05); border:1px solid #A78BFA33; "
-            "border-radius:10px; padding:14px; text-align:center;'>"
-            "<div style='color:#A78BFA; font-weight:700;'>&#128196; GSTR-2B Template</div>"
-            "<div style='color:#64748B; font-size:0.8rem; margin:6px 0;'>11 standard columns with sample data</div>"
-            "</div>",
+            f"""
+            <div style="background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(167,139,250,0.02));
+                 border:1px solid rgba(167,139,250,0.3); border-radius:14px; padding:18px 20px;">
+                <div style="font-size:1.1rem; font-weight:700; color:#A78BFA; margin-bottom:6px;">
+                    GSTR-2B Template
+                </div>
+                <div style="font-size:0.72rem; color:#64748B; margin-bottom:10px;">
+                    {col_fields}
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:4px;">
+                    <span style="background:rgba(167,139,250,0.15); color:#A78BFA; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">11 Columns</span>
+                    <span style="background:rgba(52,211,153,0.15); color:#34D399; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">3 Sample Rows</span>
+                    <span style="background:rgba(251,191,36,0.15); color:#FBBF24; border-radius:20px;
+                          padding:2px 10px; font-size:0.7rem;">Excel Format</span>
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
         st.download_button(
-            label="⬇ Download GSTR-2B Template",
-            data=make_template(GSTR_COLUMNS, "GSTR-2B"),
+            label="Download GSTR-2B Template",
+            data=make_template("GSTR-2B"),
             file_name="GSTR2B_Template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key="dl_gstr_template",
+            use_container_width=True, key="dl_gstr_template",
         )
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── File Upload Section (inline — no import dependency) ───────────────
+    # ── Upload Section ────────────────────────────────────────────────────
     st.markdown(
-        "<h4 style='color:#A78BFA;'>&#11014; Upload Your Files</h4>",
+        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:12px;'>"
+        "STEP 3 &nbsp; Upload Your Files</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Status row
+    p_badge = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
+               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>UPLOADED</span>"
+               if pr_done else
+               "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
+               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>PENDING</span>")
+    g_badge = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
+               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>UPLOADED</span>"
+               if gstr_done else
+               "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
+               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>PENDING</span>")
+
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:16px; margin-bottom:16px;">
+            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(0,212,255,0.2);
+                 border-radius:10px; padding:10px 16px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:#00D4FF; font-weight:600;">Purchase Register</span>
+                {p_badge}
+            </div>
+            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(167,139,250,0.2);
+                 border-radius:10px; padding:10px 16px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:#A78BFA; font-weight:600;">GSTR-2B</span>
+                {g_badge}
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
     from modules.upload import _render_single_uploader
     col_pr, col_gstr = st.columns(2, gap="large")
     with col_pr:
-        _render_single_uploader("Purchase Register", "pr_df", "📋", "#00D4FF")
+        _render_single_uploader("Purchase Register", "pr_df", "PR", "#00D4FF")
     with col_gstr:
-        _render_single_uploader("GSTR-2B", "gstr2b_df", "🏛️", "#A78BFA")
+        _render_single_uploader("GSTR-2B", "gstr2b_df", "2B", "#A78BFA")
 
-    st.divider()
-    # ── Proceed button ─────────────────────────────────────────────────────
-    pr_done   = st.session_state.get("pr_df") is not None
-    gstr_done = st.session_state.get("gstr2b_df") is not None
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Proceed ───────────────────────────────────────────────────────────
     if pr_done and gstr_done:
-        st.success("Both files uploaded! Ready to proceed.")
+        st.markdown(
+            "<div style='background:rgba(52,211,153,0.1); border:1px solid #34D39944; "
+            "border-radius:10px; padding:14px 20px; text-align:center; color:#34D399; "
+            "font-weight:700; font-size:1rem; margin-bottom:12px;'>"
+            "Both files uploaded successfully! Click below to continue.</div>",
+            unsafe_allow_html=True,
+        )
         if st.button("Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
             st.session_state["current_page"] = "Column Mapping"
             st.rerun()
     else:
-        missing = []
-        if not pr_done:   missing.append("Purchase Register")
-        if not gstr_done: missing.append("GSTR-2B")
-        st.info(f"Please upload: {', '.join(missing)}")
+        pending = []
+        if not pr_done:   pending.append("Purchase Register")
+        if not gstr_done: pending.append("GSTR-2B")
+        st.markdown(
+            f"<div style='background:rgba(248,113,113,0.08); border:1px solid #F8717133; "
+            f"border-radius:10px; padding:12px 18px; color:#94A3B8; font-size:0.85rem;'>"
+            f"Waiting for: <strong style='color:#F87171;'>{' and '.join(pending)}</strong></div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ---------------------------------------------------------------------------
