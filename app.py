@@ -1,4 +1,4 @@
-"""
+﻿"""
 GST Input Reconciliation System – Enterprise Edition
 Main Application Entry Point
 Prepared & Developed by Karthik LVN
@@ -196,6 +196,39 @@ hr {
 footer { visibility: hidden; }
 header { visibility: hidden; }
 .stDeployButton { display: none; }
+
+/* ── Top-right contact badge (fixed) ── */
+#karthik-badge {
+    position: fixed;
+    top: 8px;
+    right: 16px;
+    z-index: 9999;
+    background: rgba(10,10,26,0.92);
+    border: 1px solid rgba(0,212,255,0.35);
+    border-radius: 24px;
+    padding: 4px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 12px rgba(0,212,255,0.15);
+}
+#karthik-badge .kb-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #00D4FF;
+    letter-spacing: 0.5px;
+}
+#karthik-badge .kb-sep {
+    color: rgba(0,212,255,0.3);
+    font-size: 0.9rem;
+}
+#karthik-badge .kb-phone {
+    font-size: 0.75rem;
+    color: #A78BFA;
+    font-weight: 600;
+}
 </style>
 """
 
@@ -461,13 +494,15 @@ def render_sidebar() -> None:
                 pass
             st.rerun()
 
-        # ── Sidebar Footer ─────────────────────────────────────────────────
+        # ── Sidebar Footer ──────────────────────────────────────────────────
         st.markdown(
             """
-            <div style="text-align:center; color:#1E293B; font-size:0.65rem; margin-top:20px;">
-                Prepared & Developed by<br>
-                <span style="color:#374151;">Karthik LVN</span><br>
-                © 2026 All Rights Reserved
+            <div style="text-align:center; color:#374151; font-size:0.65rem; margin-top:20px;
+                 border-top:1px solid rgba(0,212,255,0.08); padding-top:12px;">
+                Prepared &amp; Developed by<br>
+                <span style="color:#00D4FF; font-weight:700;">Karthik LVN</span><br>
+                <span style="color:#A78BFA;">&#128222; 9849270702</span><br>
+                <span style="color:#374151;">&#169; 2026 All Rights Reserved</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -487,7 +522,8 @@ def render_footer() -> None:
              text-align:center; color:#374151; font-size:0.74rem; margin-top:20px;">
             <strong style="color:#4B5563;">GST Input Reconciliation System</strong>
             &nbsp;·&nbsp; Enterprise Edition v1.0 &nbsp;·&nbsp;
-            Prepared & Developed by <strong style="color:#00D4FF;">Karthik LVN</strong><br>
+            Prepared &amp; Developed by <strong style="color:#00D4FF;">Karthik LVN</strong>
+            &nbsp;&middot;&nbsp; <span style="color:#A78BFA;">&#128222; 9849270702</span><br>
             © 2026 Karthik LVN &nbsp;·&nbsp; All Rights Reserved &nbsp;·&nbsp;
             Developed using Python &amp; Streamlit
         </div>
@@ -826,6 +862,18 @@ def main() -> None:
 
     # ── Inject global styles ────────────────────────────────────────────────
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+
+    # ── Top-right branding badge ────────────────────────────────────────────
+    st.markdown(
+        """
+        <div id="karthik-badge">
+            <span class="kb-name">&#128100; Karthik LVN</span>
+            <span class="kb-sep">|</span>
+            <span class="kb-phone">&#128222;&nbsp;9849270702</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # ── Initialize session ──────────────────────────────────────────────────
     init_session_state()
