@@ -54,11 +54,11 @@ footer    { visibility: hidden; }
 header    { visibility: hidden; }
 .stDeployButton { display: none; }
 
-/* ── Top-right contact badge ── */
+/* ── Top-LEFT contact badge ── */
 #karthik-badge {
     position: fixed;
     top: 8px;
-    right: 16px;
+    left: 16px;
     z-index: 9999;
     background: rgba(15,23,42,0.95);
     border: 1px solid rgba(0,212,255,0.4);
@@ -497,6 +497,14 @@ if recon_results is not None and master_df is not None and not master_df.empty:
         "invoice_value": "Invoice Value",
     }
 
+    # Map Status to emoji label (works in both light & dark themes)
+    STATUS_EMOJI = {
+        "Fully Matched":     "\u2705 Fully Matched",
+        "Near Match":        "\U0001f7e1 Near Match",
+        "Missing in Books":  "\U0001f534 Missing in Books",
+        "Missing in GSTR-2B":"\U0001f7e0 Missing in GSTR-2B",
+    }
+
     disp_cols = ["Status"] + [c for c in SHOW_COLS if c in master_df.columns]
     if "Match Reason" in master_df.columns:
         disp_cols.append("Match Reason")
@@ -504,42 +512,20 @@ if recon_results is not None and master_df is not None and not master_df.empty:
         disp_cols.append("Similarity %")
 
     disp = master_df[disp_cols].copy()
+    # Apply emoji prefix to Status
+    disp["Status"] = disp["Status"].map(STATUS_EMOJI).fillna(disp["Status"])
     disp = disp.rename(columns=RENAME)
 
     # Format dates
-    for dc in ["Invoice Date"]:
-        if dc in disp.columns:
-            disp[dc] = disp[dc].astype(str).str[:10].str.replace(" 00:00:00","",regex=False)
+    if "Invoice Date" in disp.columns:
+        disp["Invoice Date"] = disp["Invoice Date"].astype(str).str[:10].str.replace(" 00:00:00","",regex=False)
 
-    # Colour-code the Status column
-    STATUS_COLORS_MAP = {
-        "Fully Matched":     ("DCFCE7", "166534"),
-        "Near Match":        ("FEF9C3", "92400E"),
-        "Missing in Books":  ("FEE2E2", "991B1B"),
-        "Missing in GSTR-2B":("FFF7ED", "9A3412"),
-    }
-
-    def _style_row(row):
-        status = row.get("Status", "")
-        bg, fg = STATUS_COLORS_MAP.get(status, ("FFFFFF", "111827"))
-        styles = []
-        for col in row.index:
-            if col == "Status":
-                styles.append(
-                    f"background-color:#{bg}; color:#{fg}; font-weight:700; "
-                    f"border-radius:6px; text-align:center;"
-                )
-            else:
-                styles.append(f"background-color:#{bg}22; color:#1E293B;")
-        return styles
-
-    styled = disp.style.apply(_style_row, axis=1)
-
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=460)
+    # Native st.dataframe — no custom Styler (works in light & dark modes)
+    st.dataframe(disp, use_container_width=True, hide_index=True, height=460)
     st.caption(
-        f"**{len(master_df):,}** total records &nbsp;|&nbsp; "
-        f"GSTR-2B: **{st.session_state.get('gstr_name','?')}** &nbsp;·&nbsp; "
-        f"Purchase Register: **{st.session_state.get('pr_name','?')}**"
+        f"**{len(master_df):,}** total records \xa0|\xa0 "
+        f"GSTR-2B: **{st.session_state.get('gstr_name', '?')}** \xa0\xb7\xa0 "
+        f"Purchase Register: **{st.session_state.get('pr_name', '?')}**"
     )
 
     st.markdown("<br>", unsafe_allow_html=True)

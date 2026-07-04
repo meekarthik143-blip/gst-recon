@@ -92,7 +92,80 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
     WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
             "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value"]
 
-    # Standard sheet (shows PR side for merged DFs, plain for single-source DFs)
+    # ── Helper: write two-section sheet (Books ↑, empty row, GSTR-2B ↓) ──────
+    def _write_two_section(ws, df, hdr_bg, hdr_fg, pr_cols, gst_cols,
+                           pr_label="📚  AS PER BOOKS", gst_label="📋  AS PER GSTR-2B",
+                           reason_cols=None):
+        """
+        Writes two stacked sections in one worksheet:
+          • Section 1: label row + header + pr_cols data
+          • Empty separator row
+          • Section 2: label row + header + gst_cols data
+        """
+        hdr_fill = PatternFill("solid", fgColor=hdr_bg)
+        hdr_font = Font(name="Calibri", bold=True, color=hdr_fg, size=9)
+        sec_fill = PatternFill("solid", fgColor="0F172A")
+        sec_font = Font(name="Calibri", bold=True, color="00D4FF", size=10)
+
+        def _write_section(start_row, sec_label, columns):
+            """Write one section starting at start_row. Returns next free row."""
+            # Section label row (spans width of columns)
+            lbl = ws.cell(start_row, 1, sec_label)
+            lbl.font = sec_font; lbl.fill = sec_fill
+            lbl.alignment = LEFT
+            try:
+                ws.merge_cells(start_row=start_row, start_column=1,
+                               end_row=start_row, end_column=max(len(columns), 1))
+            except Exception:
+                pass
+            ws.row_dimensions[start_row].height = 18
+            cur = start_row + 1
+
+            if not columns:
+                ws.cell(cur, 1, "No data."); return cur + 1
+
+            # Column header row
+            for ci, col in enumerate(columns, 1):
+                c = ws.cell(cur, ci, _col_label(col))
+                c.font = hdr_font; c.fill = hdr_fill
+                c.alignment = CTR; c.border = thin_border()
+            ws.row_dimensions[cur].height = 18
+            cur += 1
+
+            # Data rows
+            data = df[columns].copy()
+            for ri, row in enumerate(data.itertuples(index=False)):
+                fill = WHITE_BG if ri % 2 == 0 else ALT_BG
+                for ci, val in enumerate(row, 1):
+                    cell = ws.cell(cur, ci)
+                    cell.value = _fmt_val(val); cell.font = DATA_FONT
+                    cell.fill = fill; cell.border = thin_border()
+                    cell.alignment = CTR if isinstance(val, (int, float)) else LEFT
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        cell.number_format = "#,##0.00"
+                cur += 1
+
+            # Auto-fit columns for this section
+            for ci, col in enumerate(columns, 1):
+                vals = [str(ws.cell(r, ci).value or "") for r in range(start_row, min(cur, start_row + 52))]
+                ws.column_dimensions[get_column_letter(ci)].width = min(
+                    max((max(len(v) for v in vals) if vals else 10) + 2, 12), 42
+                )
+            return cur
+
+        cur_row = 1
+        # Section 1: Books (PR side) — optionally prepend reason columns
+        s1_cols = (reason_cols or []) + pr_cols
+        if s1_cols:
+            ws.freeze_panes = "A3"
+            cur_row = _write_section(cur_row, pr_label, s1_cols)
+        # Empty separator row
+        cur_row += 1
+        # Section 2: GSTR-2B side
+        if gst_cols:
+            _write_section(cur_row, gst_label, gst_cols)
+
+    # Standard sheet — single-source DFs (plain columns, no _pr/_gstr2b suffix)
     def write_sheet(wb, title, df, tab_color, fill_key):
         ws = wb.create_sheet(title)
         ws.sheet_properties.tabColor = tab_color
@@ -101,15 +174,22 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
             ws["A1"].font = Font(name="Calibri", color="94A3B8", italic=True, size=10)
             return
         hdr_bg, hdr_fg = HDR_CONFIGS.get(fill_key, ("0F172A", "FFFFFF"))
-        pr_cols = [c + "_pr" for c in WANT if c + "_pr" in df.columns]
-        plain   = [c for c in WANT if c in df.columns and c + "_pr" not in df.columns]
-        use_cols = pr_cols if pr_cols else (plain if plain else [c for c in df.columns if not c.startswith("_")][:14])
-        df_out = df[use_cols].copy()
-        _write_rows(ws, df_out,
-                    PatternFill("solid", fgColor=hdr_bg),
-                    Font(name="Calibri", bold=True, color=hdr_fg, size=9))
+        # Prefer PR-suffixed cols; fall back to plain cols
+        pr_cols  = [c + "_pr" for c in WANT if c + "_pr" in df.columns]
+        gst_cols = [c + "_gstr2b" for c in WANT if c + "_gstr2b" in df.columns]
+        plain    = [c for c in WANT if c in df.columns and c + "_pr" not in df.columns]
 
-    # Near Match — full side-by-side (reason cols + PR cols + GSTR-2B cols)
+        if pr_cols and gst_cols:
+            # Merged DF — show two sections
+            _write_two_section(ws, df, hdr_bg, hdr_fg, pr_cols, gst_cols)
+        else:
+            use_cols = pr_cols or plain or [c for c in df.columns if not c.startswith("_")][:14]
+            df_out = df[use_cols].copy()
+            _write_rows(ws, df_out,
+                        PatternFill("solid", fgColor=hdr_bg),
+                        Font(name="Calibri", bold=True, color=hdr_fg, size=9))
+
+    # Near Match — two sections: Books (with reason cols) + GSTR-2B
     def write_near_match_sheet(wb, df, tab_color):
         ws = wb.create_sheet("Near Match - Review")
         ws.sheet_properties.tabColor = tab_color
@@ -118,17 +198,16 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
             ws["A1"].font = Font(name="Calibri", color="94A3B8", italic=True, size=10)
             return
         hdr_bg, hdr_fg = HDR_CONFIGS["near"]
-        REASON_COLS = ["Match Reason", "Similarity %", "fuzzy_score", "confidence", "match_tier", "match_key"]
+        REASON_COLS = ["Match Reason", "Similarity %", "fuzzy_score", "confidence", "match_tier"]
         pr_cols  = [c + "_pr"     for c in WANT if c + "_pr"     in df.columns]
         gst_cols = [c + "_gstr2b" for c in WANT if c + "_gstr2b" in df.columns]
         reason_cols = [c for c in REASON_COLS if c in df.columns]
-        full_cols = reason_cols + pr_cols + gst_cols
-        if not full_cols:
-            full_cols = [c for c in df.columns if not c.startswith("_")]
-        df_out = df[full_cols].copy()
-        _write_rows(ws, df_out,
-                    PatternFill("solid", fgColor=hdr_bg),
-                    Font(name="Calibri", bold=True, color=hdr_fg, size=9))
+        _write_two_section(
+            ws, df, hdr_bg, hdr_fg, pr_cols, gst_cols,
+            pr_label="📚  AS PER BOOKS  (Near Match — Verify)",
+            gst_label="📋  AS PER GSTR-2B  (Near Match — Verify)",
+            reason_cols=reason_cols,
+        )
 
     # ── "As Per Books" — every PR record exactly once ──────────────────────
     def write_per_books(wb, matched, missing_in_gstr2b, fuzzy, pr_dup):
