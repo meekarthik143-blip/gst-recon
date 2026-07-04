@@ -96,22 +96,31 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
         """
         Shows both PR side and GSTR-2B side in same row — like Near Match Review.
         Layout: [Reason cols] [Books cols] [GSTR-2B cols]
-        All matched in one wide table. freeze at A2.
+        Uses direct column scan (not WANT list) to avoid miss due to column name differences.
         """
         hdr_fill = PatternFill("solid", fgColor=hdr_bg)
         hdr_font = Font(name="Calibri", bold=True, color=hdr_fg, size=9)
 
-        pr_cols  = [c+"_pr"     for c in WANT if c+"_pr"     in df.columns]
-        gst_cols = [c+"_gstr2b" for c in WANT if c+"_gstr2b" in df.columns]
-        rcols    = [c for c in (reason_cols or []) if c in df.columns]
+        all_df_cols = list(df.columns)
+        # Separate into _pr, _gstr2b, reason, and other groups
+        pr_cols  = [c for c in all_df_cols if c.endswith("_pr")  and not c.startswith("_")]
+        gst_cols = [c for c in all_df_cols if c.endswith("_gstr2b") and not c.startswith("_")]
+        rcols    = [c for c in (reason_cols or []) if c in all_df_cols]
+
+        # Sort by WANT order for consistent column ordering
+        want_order = {c: i for i, c in enumerate(WANT)}
+        pr_cols  = sorted(pr_cols,  key=lambda c: want_order.get(c.replace("_pr",""), 99))
+        gst_cols = sorted(gst_cols, key=lambda c: want_order.get(c.replace("_gstr2b",""), 99))
 
         all_cols = rcols + pr_cols + gst_cols
         if not all_cols:
-            all_cols = [c for c in df.columns if not c.startswith("_")]
+            # Last resort: show everything that doesn't start with _
+            all_cols = [c for c in all_df_cols if not c.startswith("_")]
 
         df_out = df[all_cols].copy()
         ws.freeze_panes = "A2"
         _write_rows(ws, df_out, hdr_fill, hdr_font, start_row=1)
+
 
     # ── Plain single-source sheet ───────────────────────────────────────────
     def write_sheet(wb, title, df, tab_color, fill_key):
@@ -158,17 +167,25 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
         REASON = ["Match Reason","Similarity %","fuzzy_score","confidence","match_tier"]
         _write_comparative(ws, df, hdr_bg, hdr_fg, reason_cols=REASON)
 
-    # ── As Per Books ────────────────────────────────────────────────────────
-    def write_per_books(wb, matched, missing_in_gstr2b, fuzzy, pr_dup):
+    # ── As Per Books — ALL categories (PR perspective) ─────────────────────
+    def write_per_books(wb, matched, missing_in_gstr2b, fuzzy, pr_dup, missing_in_books):
+        """
+        PR perspective showing ALL categories:
+          Matched | Not in GSTR-2B | Near Match | Duplicate (PR)
+        Each row has a Status label.
+        """
         ws = wb.create_sheet("As Per Books")
         ws.sheet_properties.tabColor = "1E40AF"
         hdr_bg, hdr_fg = HDR["pr_view"]
 
         def _pr_side(df, status):
             if df is None or (hasattr(df,"empty") and df.empty): return pd.DataFrame()
-            cols = [c+"_pr" for c in WANT if c+"_pr" in df.columns]
-            if not cols: return pd.DataFrame()
-            out = df[cols].copy(); out.columns = [c.replace("_pr","") for c in out.columns]
+            pr_c = [c for c in df.columns if c.endswith("_pr") and not c.startswith("_")]
+            if not pr_c:
+                pr_c = [c for c in WANT if c in df.columns]
+            if not pr_c: return pd.DataFrame()
+            out = df[pr_c].copy()
+            out.columns = [c.replace("_pr","") for c in out.columns]
             out.insert(0,"Status",status); return out
 
         def _plain(df, status):
@@ -181,30 +198,36 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
             _pr_side(matched,           "Matched"),
             _plain(missing_in_gstr2b,  "Not in GSTR-2B"),
             _pr_side(fuzzy,             "Near Match (Verify)"),
+            _plain(missing_in_books,   "Missing in Books (2B side)"),
             _plain(pr_dup,             "Duplicate (PR)"),
         ]
         all_pr = pd.concat([f for f in frames if isinstance(f,pd.DataFrame) and not f.empty],
                            ignore_index=True)
         if all_pr.empty:
             ws["A1"] = "No Books records available."; return
-        key = [c for c in ["gstin","invoice_number"] if c in all_pr.columns]
-        if key: all_pr = all_pr.drop_duplicates(subset=key, keep="first")
         ws.freeze_panes = "A2"
         _write_rows(ws, all_pr,
                     PatternFill("solid", fgColor=hdr_bg),
                     Font(name="Calibri", bold=True, color=hdr_fg, size=9))
 
-    # ── As Per GSTR-2B ─────────────────────────────────────────────────────
-    def write_per_gstr2b(wb, matched, missing_in_books, fuzzy, gst_dup):
+    # ── As Per GSTR-2B — ALL categories (GSTR-2B perspective) ─────────────
+    def write_per_gstr2b(wb, matched, missing_in_books, fuzzy, gst_dup, missing_in_gstr2b):
+        """
+        GSTR-2B perspective showing ALL categories:
+          Matched | Not in Books | Near Match | Duplicate (2B)
+        """
         ws = wb.create_sheet("As Per GSTR-2B")
         ws.sheet_properties.tabColor = "166534"
         hdr_bg, hdr_fg = HDR["gb_view"]
 
         def _gstr_side(df, status):
             if df is None or (hasattr(df,"empty") and df.empty): return pd.DataFrame()
-            cols = [c+"_gstr2b" for c in WANT if c+"_gstr2b" in df.columns]
-            if not cols: return pd.DataFrame()
-            out = df[cols].copy(); out.columns = [c.replace("_gstr2b","") for c in out.columns]
+            g_c = [c for c in df.columns if c.endswith("_gstr2b") and not c.startswith("_")]
+            if not g_c:
+                g_c = [c for c in WANT if c in df.columns]
+            if not g_c: return pd.DataFrame()
+            out = df[g_c].copy()
+            out.columns = [c.replace("_gstr2b","") for c in out.columns]
             out.insert(0,"Status",status); return out
 
         def _plain(df, status):
@@ -214,21 +237,21 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
             out = df[cols].copy(); out.insert(0,"Status",status); return out
 
         frames = [
-            _gstr_side(matched,        "Matched"),
-            _plain(missing_in_books,  "Not in Books"),
-            _gstr_side(fuzzy,          "Near Match (Verify)"),
-            _plain(gst_dup,           "Duplicate (2B)"),
+            _gstr_side(matched,         "Matched"),
+            _plain(missing_in_books,   "Not in Books"),
+            _gstr_side(fuzzy,           "Near Match (Verify)"),
+            _plain(missing_in_gstr2b,  "Missing in GSTR-2B (PR side)"),
+            _plain(gst_dup,            "Duplicate (2B)"),
         ]
         all_gb = pd.concat([f for f in frames if isinstance(f,pd.DataFrame) and not f.empty],
                            ignore_index=True)
         if all_gb.empty:
             ws["A1"] = "No GSTR-2B records available."; return
-        key = [c for c in ["gstin","invoice_number"] if c in all_gb.columns]
-        if key: all_gb = all_gb.drop_duplicates(subset=key, keep="first")
         ws.freeze_panes = "A2"
         _write_rows(ws, all_gb,
                     PatternFill("solid", fgColor=hdr_bg),
                     Font(name="Calibri", bold=True, color=hdr_fg, size=9))
+
 
     # ── Extract result sets ─────────────────────────────────────────────────
     matched = recon_results.get("matched",           pd.DataFrame())
@@ -310,13 +333,14 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
         all_records = unrecon
     else:
         # Extract PR side of matched + all unreconciled
-        pr_cols = [c+"_pr" for c in WANT if c+"_pr" in matched.columns]
+        pr_cols = [c for c in matched.columns if c.endswith("_pr") and not c.startswith("_")]
         if pr_cols:
             m_pr = matched[pr_cols].copy()
             m_pr.columns = [c.replace("_pr","") for c in m_pr.columns]
             m_pr.insert(0,"Status","Matched")
         else:
             m_pr = pd.DataFrame()
+
         all_records = pd.concat(
             [f for f in [m_pr]+unrecon_frames if isinstance(f,pd.DataFrame) and not f.empty],
             ignore_index=True
@@ -333,8 +357,9 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
         ws_all["A1"] = "No records."
 
     # 9. As Per Books / As Per GSTR-2B
-    write_per_books(wb,  matched, gstr,  fuzzy, pr_dup)
-    write_per_gstr2b(wb, matched, books, fuzzy, gst_dup)
+    write_per_books(wb,  matched, gstr,  fuzzy, pr_dup, books)
+    write_per_gstr2b(wb, matched, books, fuzzy, gst_dup, gstr)
+
 
     buf = io.BytesIO()
     wb.save(buf)
