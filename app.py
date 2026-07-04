@@ -1,923 +1,578 @@
-﻿"""
-GST Input Reconciliation System – Enterprise Edition
-Main Application Entry Point
-Prepared & Developed by Karthik LVN
-
-Features:
-  - Splash screen (3-second animated loader on first run)
-  - Session state initialization
-  - Sidebar navigation
-  - Page routing
-  - Global CSS injection for enterprise dark theme
-  - Persistent branding and footer
+"""
+GST Reconciliation System – Single Page Edition
+AI-powered invoice matching between GSTR-2B and Purchase Register
+Prepared & Developed by Karthik LVN | 9849270702
 """
 
-import time
-import uuid
+import io
 import datetime
-
+import pandas as pd
 import streamlit as st
 
-# ── Page Config (must be first Streamlit call) ─────────────────────────────
+# ── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="GST Input Reconciliation System",
-    page_icon="📊",
+    page_title="GST Reconciliation – Karthik LVN",
+    page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
     menu_items={
-        "Get Help": None,
-        "Report a bug": None,
-        "About": "GST Input Reconciliation System v1.0 Enterprise Edition\nPrepared & Developed by Karthik LVN",
+        "About": "GST Reconciliation v2.0\nPrepared & Developed by Karthik LVN | 9849270702",
     },
 )
 
-# ── Bootstrap: ensure directories exist ───────────────────────────────────
-from modules.utils import ensure_directories, setup_logging, get_current_financial_year, cleanup_temp_files
-from modules.authentication import initialize_users, render_login_page
+# ── Bootstrap ──────────────────────────────────────────────────────────────
+from modules.utils import ensure_directories, setup_logging
 from modules.audit import initialize_audit_db, log_event
-from modules.settings import initialize_settings, load_settings
 
 ensure_directories()
-initialize_users()
 initialize_audit_db()
-initialize_settings()
-
 logger = setup_logging()
 
-# ---------------------------------------------------------------------------
-# Global CSS
-# ---------------------------------------------------------------------------
-
-GLOBAL_CSS = """
+# ── Global CSS ─────────────────────────────────────────────────────────────
+st.markdown("""
 <style>
-/* ── Font: system-ui fallback (no network dependency) ── */
+/* Hide sidebar completely */
+[data-testid="stSidebar"]          { display: none !important; }
+[data-testid="collapsedControl"]   { display: none !important; }
 
-/* ── Root Variables ── */
-:root {
-    --primary: #00D4FF;
-    --secondary: #A78BFA;
-    --success: #34D399;
-    --warning: #FBBF24;
-    --danger: #F87171;
-    --dark-bg: #0A0A1A;
-    --card-bg: rgba(26, 26, 46, 0.85);
-    --border: rgba(0, 212, 255, 0.2);
-    --text: #EAEAEA;
-    --muted: #64748B;
-}
-
-/* ── App Background ── */
+/* Light page background */
 .stApp {
-    background: linear-gradient(135deg, #0A0A1A 0%, #0D1B2A 40%, #0A0A1A 100%);
+    background: #F1F5F9;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
 }
 
-/* ── Sidebar ── */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0D1422 0%, #0A0F1E 100%) !important;
-    border-right: 1px solid rgba(0, 212, 255, 0.15) !important;
+/* Centre & max-width main content */
+.main .block-container {
+    max-width: 960px !important;
+    padding: 24px 24px 40px 24px !important;
+    margin: 0 auto !important;
 }
 
-[data-testid="stSidebar"] .stButton button {
-    background: transparent;
-    border: 1px solid rgba(0, 212, 255, 0.2);
-    color: #EAEAEA;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
-    text-align: left;
-    width: 100%;
-    margin: 2px 0;
-}
-[data-testid="stSidebar"] .stButton button:hover {
-    background: rgba(0, 212, 255, 0.12);
-    border-color: #00D4FF;
-    color: #00D4FF;
-    transform: translateX(4px);
-}
-
-/* ── Metric Cards ── */
-[data-testid="metric-container"] {
-    background: rgba(26, 26, 46, 0.8) !important;
-    border: 1px solid rgba(0, 212, 255, 0.2) !important;
-    border-radius: 12px !important;
-    padding: 16px !important;
-}
-
-/* ── Dataframe ── */
-[data-testid="stDataFrame"] {
-    border: 1px solid rgba(0, 212, 255, 0.15);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: rgba(13, 27, 42, 0.8);
-    border-radius: 12px;
-    padding: 4px;
-    gap: 4px;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 8px;
-    color: #94A3B8;
-    font-family: 'Inter', sans-serif;
-    font-weight: 500;
-    padding: 8px 16px;
-}
-.stTabs [aria-selected="true"] {
-    background: rgba(0, 212, 255, 0.15) !important;
-    color: #00D4FF !important;
-}
-
-/* ── Expander ── */
-[data-testid="stExpander"] {
-    border: 1px solid rgba(0, 212, 255, 0.15);
-    border-radius: 12px;
-    background: rgba(26, 26, 46, 0.5);
-}
-
-/* ── Buttons ── */
-.stButton button[kind="primary"] {
-    background: linear-gradient(135deg, #00D4FF, #0099BB) !important;
-    color: #000 !important;
-    border: none !important;
-    font-weight: 700;
-    border-radius: 8px;
-    font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
-}
-.stButton button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #00EEFF, #00D4FF) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(0, 212, 255, 0.4);
-}
-
-/* ── Inputs ── */
-.stTextInput input, .stSelectbox select, .stTextArea textarea {
-    background: rgba(13, 27, 42, 0.8) !important;
-    border: 1px solid rgba(0, 212, 255, 0.25) !important;
-    color: #EAEAEA !important;
-    border-radius: 8px !important;
-    font-family: 'Inter', sans-serif !important;
-}
-.stTextInput input:focus, .stSelectbox select:focus {
-    border-color: #00D4FF !important;
-    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2) !important;
-}
-
-/* ── Progress bar ── */
-.stProgress > div > div {
-    background: linear-gradient(90deg, #00D4FF, #A78BFA) !important;
-    border-radius: 4px !important;
-}
-
-/* ── Divider ── */
-hr {
-    border-color: rgba(0, 212, 255, 0.1) !important;
-    margin: 20px 0 !important;
-}
-
-/* ── Success/Error/Warning boxes ── */
-.stAlert {
-    border-radius: 10px;
-    border-left-width: 4px;
-}
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0A0A1A; }
-::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.3); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #00D4FF; }
-
-/* ── Hide Streamlit branding ── */
+/* Hide Streamlit chrome */
 #MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-header { visibility: hidden; }
+footer    { visibility: hidden; }
+header    { visibility: hidden; }
 .stDeployButton { display: none; }
 
-/* ── Top-right contact badge (fixed) ── */
+/* ── Top-right contact badge ── */
 #karthik-badge {
     position: fixed;
     top: 8px;
     right: 16px;
     z-index: 9999;
-    background: rgba(10,10,26,0.92);
-    border: 1px solid rgba(0,212,255,0.35);
+    background: rgba(15,23,42,0.95);
+    border: 1px solid rgba(0,212,255,0.4);
     border-radius: 24px;
-    padding: 4px 14px;
+    padding: 4px 16px;
     display: flex;
     align-items: center;
     gap: 10px;
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 2px 12px rgba(0,212,255,0.15);
+    font-family: 'Segoe UI', sans-serif;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
 }
-#karthik-badge .kb-name {
-    font-size: 0.78rem;
+.kb-name  { font-size: 0.76rem; font-weight: 700; color: #00D4FF; }
+.kb-sep   { color: rgba(255,255,255,0.2); }
+.kb-phone { font-size: 0.72rem; color: #A78BFA; font-weight: 600; }
+
+/* ── Upload drop-zone look ── */
+[data-testid="stFileUploadDropzone"] {
+    border: 2px dashed #CBD5E1 !important;
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+    min-height: 56px !important;
+}
+[data-testid="stFileUploadDropzone"]:hover {
+    border-color: #6366F1 !important;
+    background: #F5F3FF !important;
+}
+
+/* ── Reconcile button (big, purple-blue) ── */
+div[data-testid="stButton"] > button[kind="primary"] {
+    background: linear-gradient(135deg, #4F46E5, #7C3AED) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    padding: 12px 24px !important;
+    letter-spacing: 0.3px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 16px rgba(79,70,229,0.35) !important;
+}
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #4338CA, #6D28D9) !important;
+    box-shadow: 0 6px 20px rgba(79,70,229,0.5) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Download button (green) */
+.dl-btn > button {
+    background: linear-gradient(135deg, #059669, #10B981) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+}
+
+/* ── Metrics ── */
+[data-testid="metric-container"] {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 12px !important;
+    padding: 14px 16px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+}
+[data-testid="stMetricValue"] { color: #0F172A !important; font-weight: 800 !important; }
+[data-testid="stMetricLabel"] { color: #64748B !important; font-size: 0.78rem !important; }
+
+/* ── Download button styling ── */
+.stDownloadButton > button {
+    background: linear-gradient(135deg, #059669, #10B981) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+    padding: 10px 20px !important;
+    box-shadow: 0 4px 12px rgba(5,150,105,0.3) !important;
+    transition: all 0.2s ease !important;
+}
+.stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+    box-shadow: 0 6px 16px rgba(5,150,105,0.45) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Success/error alerts */
+.stAlert { border-radius: 10px !important; }
+
+/* Section labels */
+.sec-label {
+    font-size: 0.68rem;
     font-weight: 700;
-    color: #00D4FF;
-    letter-spacing: 0.5px;
+    letter-spacing: 1.5px;
+    color: #94A3B8;
+    margin-bottom: 10px;
+    text-transform: uppercase;
 }
-#karthik-badge .kb-sep {
-    color: rgba(0,212,255,0.3);
-    font-size: 0.9rem;
-}
-#karthik-badge .kb-phone {
-    font-size: 0.75rem;
-    color: #A78BFA;
-    font-weight: 600;
-}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 </style>
-"""
+""", unsafe_allow_html=True)
 
+# ── Top-right name badge ───────────────────────────────────────────────────
+st.markdown("""
+<div id="karthik-badge">
+    <span class="kb-name">&#128100; Karthik LVN</span>
+    <span class="kb-sep">|</span>
+    <span class="kb-phone">&#128222;&nbsp;9849270702</span>
+</div>
+""", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# Splash Screen
-# ---------------------------------------------------------------------------
-
-def show_splash_screen() -> None:
-    """Display animated splash screen for 3 seconds on first launch."""
-
-    splash_placeholder = st.empty()
-
-    splash_html = """
-    <div style="
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 85vh;
-        background: linear-gradient(135deg, #0A0A1A 0%, #0D1B2A 50%, #0A0A1A 100%);
-    ">
-        <div style="text-align: center; animation: fadeInUp 0.8s ease-out;">
-            <div style="font-size: 5rem; margin-bottom: 16px; animation: pulse 2s infinite;">📊</div>
-
-            <div style="
-                font-size: 2.2rem;
-                font-weight: 800;
-                background: linear-gradient(90deg, #00D4FF, #A78BFA, #00D4FF);
-                background-size: 200% auto;
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                animation: shimmer 2s linear infinite;
-                margin-bottom: 8px;
-            ">
-                GST Input Reconciliation System
-            </div>
-
-            <div style="
-                font-size: 1rem;
-                color: #A78BFA;
-                letter-spacing: 4px;
-                text-transform: uppercase;
-                margin-bottom: 6px;
-            ">
-                Enterprise Edition
-            </div>
-
-            <div style="color: #64748B; font-size: 0.85rem; margin-bottom: 32px;">
-                Prepared & Developed by
-                <span style="color: #00D4FF; font-weight: 700;">Karthik LVN</span>
-            </div>
-
-            <!-- Loading bar -->
-            <div style="
-                width: 320px;
-                height: 4px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 4px;
-                overflow: hidden;
-                margin: 0 auto 16px auto;
-            ">
-                <div style="
-                    height: 100%;
-                    background: linear-gradient(90deg, #00D4FF, #A78BFA);
-                    border-radius: 4px;
-                    animation: loadingBar 2.8s ease-in-out forwards;
-                "></div>
-            </div>
-
-            <div style="color: #374151; font-size: 0.78rem; animation: blink 1.2s infinite;">
-                Loading application…
-            </div>
-        </div>
-    </div>
-
-    <style>
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(30px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes shimmer {
-        0%   { background-position: 0% center; }
-        100% { background-position: 200% center; }
-    }
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50%       { transform: scale(1.08); }
-    }
-    @keyframes loadingBar {
-        0%   { width: 0%; }
-        30%  { width: 40%; }
-        70%  { width: 80%; }
-        100% { width: 100%; }
-    }
-    @keyframes blink {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.4; }
-    }
-    </style>
-    """
-
-    splash_placeholder.markdown(splash_html, unsafe_allow_html=True)
-    time.sleep(3)
-    splash_placeholder.empty()
-
-
-# ---------------------------------------------------------------------------
-# Session State Initialization
-# ---------------------------------------------------------------------------
-
-def init_session_state() -> None:
-    """Initialize all required session state variables with defaults."""
-
-    defaults = {
-        "authenticated": False,
-        "username": None,
-        "role": None,
-        "full_name": None,
-        "session_id": None,
-        "login_time": None,
-        "current_page": "Dashboard",
-        "splash_shown": False,
-        "app_settings": None,
-        # Data
-        "pr_df": None,
-        "gstr2b_df": None,
-        "pr_mapped": None,
-        "gstr2b_mapped": None,
-        "recon_results": None,
-        "master_df": None,
-        # History
-        "upload_history": [],
-        # Mapping
-        "auto_mapping_PR": None,
-        "auto_mapping_GSTR2B": None,
-        # Cleaning summaries
-        "cleaning_summary_PR": None,
-        "cleaning_summary_GSTR2B": None,
-    }
-
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
-
-# ---------------------------------------------------------------------------
-# Sidebar Navigation
-# ---------------------------------------------------------------------------
-
-# 5 Main workflow steps + admin
-PAGES = {
-    "Dashboard":       "🏠",
-    "Upload Data":     "📤",
-    "Column Mapping":  "🗂️",
-    "Reconcile":       "⚙️",
-    "Reports":         "📄",
-    "Settings":        "⚙️",
+# ── Session state ──────────────────────────────────────────────────────────
+_defaults = {
+    "recon_results": None,
+    "master_df":     None,
+    "gstr_name":     None,
+    "pr_name":       None,
 }
+for k, v in _defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-ADMIN_ONLY_PAGES = {"User Management": "👥"}
-
-# Step labels shown in sidebar
-STEP_LABELS = [
-    ("Dashboard",      "🏠", "Overview & KPIs"),
-    ("Upload Data",    "📤", "Templates & Upload"),
-    ("Column Mapping", "🗂️", "Map Columns"),
-    ("Reconcile",      "⚙️", "Run Reconciliation"),
-    ("Reports",        "📄", "View & Download"),
-]
-
-
-def render_sidebar() -> None:
-    """Render the left sidebar with navigation, user info, and branding."""
-
-    with st.sidebar:
-        # ── Logo / Branding ──────────────────────────────────────────────
-        st.markdown(
-            """
-            <div style="text-align:center; padding:16px 8px 8px 8px;
-                 border-bottom:1px solid rgba(0,212,255,0.15); margin-bottom:12px;">
-                <div style="font-size:1.8rem;">📊</div>
-                <div style="font-size:0.85rem; font-weight:700; color:#00D4FF; line-height:1.3;">
-                    GST Input<br>Reconciliation System
-                </div>
-                <div style="font-size:0.65rem; color:#A78BFA; margin-top:2px;">
-                    Enterprise Edition v1.0
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # ── User info ────────────────────────────────────────────────────
-        username = st.session_state.get("username", "")
-        full_name = st.session_state.get("full_name", username)
-        role = st.session_state.get("role", "user")
-        role_badge_color = "#00D4FF" if role == "admin" else "#A78BFA"
-
-        st.markdown(
-            f"""
-            <div style="background:rgba(26,26,46,0.6); border-radius:10px;
-                 padding:10px 12px; margin-bottom:12px;
-                 border:1px solid rgba(0,212,255,0.1);">
-                <div style="font-size:0.85rem; color:#EAEAEA; font-weight:600;">
-                    👤 {full_name}
-                </div>
-                <div style="font-size:0.72rem; color:#64748B;">@{username}</div>
-                <span style="background:{role_badge_color}22; color:{role_badge_color};
-                      border:1px solid {role_badge_color}44; border-radius:4px;
-                      padding:1px 8px; font-size:0.68rem; font-weight:600;">
-                    {role.upper()}
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # ── Navigation ───────────────────────────────────────────────────
-        st.markdown(
-            "<div style='font-size:0.68rem; color:#374151; "
-            "letter-spacing:1px; margin-bottom:6px;'>NAVIGATION</div>",
-            unsafe_allow_html=True,
-        )
-
-        current_page = st.session_state.get("current_page", "Dashboard")
-
-        for page_name, icon in PAGES.items():
-            is_active = current_page == page_name
-            btn_style = (
-                "border-color: #00D4FF !important; color: #00D4FF !important; "
-                "background: rgba(0,212,255,0.1) !important;"
-                if is_active else ""
-            )
-            label = f"{icon} {page_name}"
-            if st.button(label, key=f"nav_{page_name}", use_container_width=True):
-                st.session_state["current_page"] = page_name
-                st.rerun()
-
-        # Admin-only pages
-        if role == "admin":
-            st.markdown(
-                "<div style='font-size:0.68rem; color:#374151; "
-                "letter-spacing:1px; margin:12px 0 6px 0;'>ADMIN</div>",
-                unsafe_allow_html=True,
-            )
-            for page_name, icon in ADMIN_ONLY_PAGES.items():
-                if st.button(f"{icon} {page_name}", key=f"nav_{page_name}", use_container_width=True):
-                    st.session_state["current_page"] = page_name
-                    st.rerun()
-
-        st.divider()
-
-        # ── Logout ────────────────────────────────────────────────────────
-        if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
-            log_event("LOGOUT", f"User '{username}' logged out.")
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            # Clean temp files on logout
-            try:
-                cleanup_temp_files(older_than_hours=0)
-            except Exception:
-                pass
-            st.rerun()
-
-        # ── Sidebar Footer ──────────────────────────────────────────────────
-        st.markdown(
-            """
-            <div style="text-align:center; color:#374151; font-size:0.65rem; margin-top:20px;
-                 border-top:1px solid rgba(0,212,255,0.08); padding-top:12px;">
-                Prepared &amp; Developed by<br>
-                <span style="color:#00D4FF; font-weight:700;">Karthik LVN</span><br>
-                <span style="color:#A78BFA;">&#128222; 9849270702</span><br>
-                <span style="color:#374151;">&#169; 2026 All Rights Reserved</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+# ── Header banner ──────────────────────────────────────────────────────────
+st.markdown("""
+<div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+     border-radius: 16px; padding: 28px 36px; margin-bottom: 24px;
+     border: 1px solid rgba(255,255,255,0.06);
+     box-shadow: 0 8px 32px rgba(0,0,0,0.18);">
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:8px;">
+        <span style="font-size:2rem;">⚡</span>
+        <span style="font-size:1.7rem; font-weight:800; color:#FFFFFF;
+               letter-spacing:-0.5px;">GST Reconciliation</span>
+        <span style="background:rgba(99,102,241,0.25); color:#A5B4FC; font-size:0.68rem;
+               font-weight:700; padding:3px 10px; border-radius:20px;
+               border:1px solid rgba(99,102,241,0.4); letter-spacing:0.5px;">v2.0</span>
+    </div>
+    <div style="color:#94A3B8; font-size:0.9rem; padding-left:4px; margin-bottom:4px;">
+        AI-powered invoice matching between GSTR-2B and Purchase Register
+    </div>
+    <div style="color:#475569; font-size:0.78rem; padding-left:4px;">
+        Prepared &amp; Developed by
+        <strong style="color:#00D4FF;">Karthik LVN</strong>
+        &nbsp;&middot;&nbsp; &#128222; 9849270702
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Page Footer
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Helpers
+# ===========================================================================
 
-def render_footer() -> None:
-    """Render the global page footer."""
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div style="border-top:1px solid rgba(0,212,255,0.1); padding-top:12px;
-             text-align:center; color:#374151; font-size:0.74rem; margin-top:20px;">
-            <strong style="color:#4B5563;">GST Input Reconciliation System</strong>
-            &nbsp;·&nbsp; Enterprise Edition v1.0 &nbsp;·&nbsp;
-            Prepared &amp; Developed by <strong style="color:#00D4FF;">Karthik LVN</strong>
-            &nbsp;&middot;&nbsp; <span style="color:#A78BFA;">&#128222; 9849270702</span><br>
-            © 2026 Karthik LVN &nbsp;·&nbsp; All Rights Reserved &nbsp;·&nbsp;
-            Developed using Python &amp; Streamlit
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def read_uploaded_file(file) -> pd.DataFrame:
+    """Read Excel or CSV upload into a DataFrame."""
+    try:
+        name = file.name.lower()
+        if name.endswith(".csv"):
+            return pd.read_csv(file)
+        else:
+            return pd.read_excel(file, engine="openpyxl")
+    except Exception as e:
+        st.error(f"Could not read **{file.name}**: {e}")
+        return pd.DataFrame()
 
 
-# ---------------------------------------------------------------------------
-# Page Router
-# ---------------------------------------------------------------------------
-
-def route_page(page: str) -> None:
-    """Dispatch to the appropriate page renderer."""
-
-    if page == "Dashboard":
-        from modules.dashboard import render_home_dashboard
-        render_home_dashboard()
-
-    elif page == "Upload Data":
-        render_upload_and_template_page()
-
-    elif page == "Column Mapping":
-        from modules.mapping import render_mapping_page
-        render_mapping_page()
-
-    elif page == "Reconcile":
-        from modules.matching import render_reconciliation_page
-        render_reconciliation_page()
-
-    elif page == "Reports":
-        from modules.reports import render_reports_page
-        render_reports_page()
-
-    elif page == "Settings":
-        from modules.settings import render_settings_page
-        render_settings_page()
-
-    elif page == "User Management":
-        from modules.authentication import render_user_management_page
-        render_user_management_page()
-
-    else:
-        # Fallback to dashboard
-        from modules.dashboard import render_home_dashboard
-        render_home_dashboard()
+def auto_process(df: pd.DataFrame, source_tag: str) -> pd.DataFrame:
+    """Silently auto-detect columns, apply mapping & clean – no user prompts."""
+    try:
+        from modules.mapping import auto_detect_columns, apply_mapping, clean_dataframe
+        cols = list(df.columns)
+        mapping = auto_detect_columns(cols) or {}
+        # Fallback: if mapping is empty, try direct match to standard names
+        if not mapping:
+            STD = ["vendor_name","gstin","invoice_number","invoice_date",
+                   "taxable_value","cgst","sgst","igst","cess","total_gst","invoice_value"]
+            mapping = {c: c for c in STD if c in cols}
+        mapped  = apply_mapping(df, mapping, source_tag=source_tag)
+        cleaned, _ = clean_dataframe(mapped, mapping)
+        return cleaned
+    except Exception as exc:
+        logger.warning(f"Auto-process failed for {source_tag}: {exc}")
+        return df
 
 
-# ---------------------------------------------------------------------------
-# Upload + Template Download Page
-# ---------------------------------------------------------------------------
+def build_master(recon_results: dict) -> pd.DataFrame:
+    """Flatten all result sets into one table with a Status column."""
+    WANT = ["vendor_name", "gstin", "invoice_number", "invoice_date",
+            "taxable_value", "cgst", "sgst", "igst", "total_gst", "invoice_value"]
 
-def render_upload_and_template_page() -> None:
-    """Upload page with downloadable Excel templates and close button."""
-    import io
+    def _extract(df, status, pref):
+        if df is None or (hasattr(df, "empty") and df.empty):
+            return pd.DataFrame()
+        rec = {}
+        for c in WANT:
+            pk = c + pref
+            if pref and pk in df.columns:
+                rec[c] = df[pk].values
+            elif c in df.columns:
+                rec[c] = df[c].values
+        if not rec:
+            return pd.DataFrame()
+        out = pd.DataFrame(rec)
+        out.insert(0, "Status", status)
+        for extra in ["Match Reason", "Similarity %", "confidence"]:
+            if extra in df.columns:
+                out[extra] = df[extra].values
+        return out
+
+    frames = [
+        _extract(recon_results.get("matched"),           "Fully Matched",     "_gstr2b"),
+        _extract(recon_results.get("missing_in_books"),  "Missing in Books",   ""),
+        _extract(recon_results.get("fuzzy_candidates"),  "Near Match",         "_gstr2b"),
+        _extract(recon_results.get("missing_in_gstr2b"), "Missing in GSTR-2B", ""),
+    ]
+    valid = [f for f in frames if isinstance(f, pd.DataFrame) and not f.empty]
+    return pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
+
+
+def make_template_bytes() -> bytes:
+    """Build a two-sheet Excel template (GSTR-2B + Purchase Register)."""
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
 
-    TEMPLATE_COLS = [
-        "vendor_name", "gstin", "invoice_number", "invoice_date",
-        "taxable_value", "cgst", "sgst", "igst", "cess", "total_gst", "invoice_value",
-    ]
-
-    def make_template(sheet_name: str) -> bytes:
-        wb = openpyxl.Workbook(); ws = wb.active; ws.title = sheet_name
-        hf = PatternFill("solid", fgColor="0D1B2A")
-        hfont = Font(name="Calibri", bold=True, color="00D4FF", size=11)
-        center = Alignment(horizontal="center", vertical="center")
-        samples = {
-            "vendor_name":   ["ABC Traders Pvt Ltd", "XYZ Industries", "PQR Enterprises"],
-            "gstin":         ["29ABCDE1234F1Z5", "27XYZPQ5678G1Z3", "33PQRST9012H1Z7"],
-            "invoice_number":["INV/2024/001", "INV/2024/002", "INV/2024/003"],
-            "invoice_date":  ["01-04-2024", "05-04-2024", "10-04-2024"],
-            "taxable_value": [100000, 250000, 75000],
-            "cgst": [9000, 22500, 6750], "sgst": [9000, 22500, 6750],
-            "igst": [0, 0, 0], "cess": [0, 0, 0],
-            "total_gst": [18000, 45000, 13500], "invoice_value": [118000, 295000, 88500],
-        }
-        rf = PatternFill("solid", fgColor="1A1A2E")
-        rfont = Font(name="Calibri", color="EAEAEA", size=10)
-        for ci, col in enumerate(TEMPLATE_COLS, 1):
-            c = ws.cell(1, ci, col); c.font = hfont; c.fill = hf; c.alignment = center
-            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = max(len(col)+4, 18)
+    COLS = ["vendor_name","gstin","invoice_number","invoice_date",
+            "taxable_value","cgst","sgst","igst","cess","total_gst","invoice_value"]
+    SAMPLES = {
+        "vendor_name":   ["ABC Traders Pvt Ltd","XYZ Industries Pvt Ltd","PQR Enterprises"],
+        "gstin":         ["29ABCDE1234F1Z5","27XYZPQ5678G1Z3","33PQRST9012H1Z7"],
+        "invoice_number":["INV/2024/001","INV/2024/002","INV/2024/003"],
+        "invoice_date":  ["01-04-2024","05-04-2024","10-04-2024"],
+        "taxable_value": [100000,250000,75000],
+        "cgst":          [9000,22500,6750],
+        "sgst":          [9000,22500,6750],
+        "igst":          [0,0,0],
+        "cess":          [0,0,0],
+        "total_gst":     [18000,45000,13500],
+        "invoice_value": [118000,295000,88500],
+    }
+    wb = openpyxl.Workbook()
+    for sheet in ["GSTR-2B","Purchase Register"]:
+        ws = wb.create_sheet(sheet)
+        hf  = PatternFill("solid", fgColor="1E3A5F")
+        hft = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
+        ctr = Alignment(horizontal="center")
+        for ci, col in enumerate(COLS, 1):
+            c = ws.cell(1, ci, col); c.font = hft; c.fill = hf; c.alignment = ctr
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 20
         for ri in range(3):
-            for ci, col in enumerate(TEMPLATE_COLS, 1):
-                v = samples.get(col, ["","",""])
-                c = ws.cell(ri+2, ci, v[ri] if ri < len(v) else ""); c.font = rfont; c.fill = rf
-        ws.row_dimensions[1].height = 22
-        buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+            for ci, col in enumerate(COLS, 1):
+                vals = SAMPLES.get(col, ["","",""])
+                ws.cell(ri + 2, ci, vals[ri] if ri < len(vals) else "")
+    del wb["Sheet"]
+    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
-    pr_done   = st.session_state.get("pr_df") is not None
-    gstr_done = st.session_state.get("gstr2b_df") is not None
 
-    # ── Page header + Close button ────────────────────────────────────────
-    hdr, close_col = st.columns([9, 1])
-    hdr.markdown(
-        "<h2 style='color:#00D4FF; margin:0;'>Upload Data</h2>",
-        unsafe_allow_html=True,
+# ===========================================================================
+# SECTION 1 — Template
+# ===========================================================================
+st.markdown('<div class="sec-label">Template</div>', unsafe_allow_html=True)
+
+t_col, _ = st.columns([2, 8])
+with t_col:
+    st.download_button(
+        "⬇ Download Template",
+        data=make_template_bytes(),
+        file_name="GST_Recon_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_tmpl",
+        use_container_width=True,
     )
-    if close_col.button("Close", key="close_upload"):
-        st.session_state["current_page"] = "Dashboard"
-        st.rerun()
 
-    # ── Step tracker ──────────────────────────────────────────────────────
-    s1_c = "#00D4FF"
-    s2_c = "#00D4FF" if (pr_done or gstr_done) else "#374151"
-    s3_c = "#34D399" if (pr_done and gstr_done) else "#374151"
-    st.markdown(
-        f"""
-        <div style="display:flex; align-items:center; gap:0; margin:12px 0 24px 0;">
-            <div style="background:{s1_c}; color:#000; border-radius:50%; width:28px; height:28px;
-                 display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem;">1</div>
-            <div style="flex:1; height:3px; background:{s2_c}; margin:0 4px;"></div>
-            <div style="background:{s2_c}; color:#{'000' if pr_done or gstr_done else 'fff'}; border-radius:50%;
-                 width:28px; height:28px; display:flex; align-items:center; justify-content:center;
-                 font-weight:700; font-size:0.85rem;">2</div>
-            <div style="flex:1; height:3px; background:{s3_c}; margin:0 4px;"></div>
-            <div style="background:{s3_c}; color:#{'000' if pr_done and gstr_done else 'fff'}; border-radius:50%;
-                 width:28px; height:28px; display:flex; align-items:center; justify-content:center;
-                 font-weight:700; font-size:0.85rem;">3</div>
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ===========================================================================
+# SECTION 2 — Upload Files
+# ===========================================================================
+st.markdown('<div class="sec-label">Upload Files</div>', unsafe_allow_html=True)
+
+ul1, ul2 = st.columns(2, gap="large")
+
+with ul1:
+    st.markdown("""
+    <div style="background:#FFFFFF; border:2px dashed #CBD5E1; border-radius:14px;
+         padding:22px 16px; text-align:center; margin-bottom:8px;">
+        <div style="font-size:2.2rem; margin-bottom:6px;">📋</div>
+        <div style="font-weight:700; color:#1E293B; font-size:0.95rem;">GSTR-2B File</div>
+        <div style="color:#94A3B8; font-size:0.76rem; margin-top:4px;">
+            Upload your GSTR-2B Excel file (.xlsx)
         </div>
-        <div style="display:flex; margin-bottom:24px; gap:0;">
-            <div style="flex:1; color:{s1_c}; font-size:0.75rem; font-weight:600;">Download Template</div>
-            <div style="flex:1; color:{s2_c}; font-size:0.75rem; font-weight:600; text-align:center;">Fill Your Data</div>
-            <div style="flex:1; color:{s3_c}; font-size:0.75rem; font-weight:600; text-align:right;">Upload Files</div>
+    </div>""", unsafe_allow_html=True)
+    gstr_file = st.file_uploader(
+        "GSTR-2B",
+        type=["xlsx","xls","csv"],
+        label_visibility="collapsed",
+        key="gstr_upload",
+    )
+
+with ul2:
+    st.markdown("""
+    <div style="background:#FFFFFF; border:2px dashed #CBD5E1; border-radius:14px;
+         padding:22px 16px; text-align:center; margin-bottom:8px;">
+        <div style="font-size:2.2rem; margin-bottom:6px;">📄</div>
+        <div style="font-weight:700; color:#1E293B; font-size:0.95rem;">Purchase Register</div>
+        <div style="color:#94A3B8; font-size:0.76rem; margin-top:4px;">
+            Upload your Purchase Register Excel file (.xlsx)
         </div>
-        """,
-        unsafe_allow_html=True,
+    </div>""", unsafe_allow_html=True)
+    pr_file = st.file_uploader(
+        "Purchase Register",
+        type=["xlsx","xls","csv"],
+        label_visibility="collapsed",
+        key="pr_upload",
     )
 
-    # ── Template Download Section ─────────────────────────────────────────
-    # ── Upload Section ────────────────────────────────────────────────────
-    st.markdown(
-        "<div style='font-size:1rem; font-weight:700; color:#A78BFA; margin-bottom:12px;'>"
-        "Upload Your Files</div>",
-        unsafe_allow_html=True,
+# Status banners
+if gstr_file or pr_file:
+    b1, b2 = st.columns(2)
+    with b1:
+        if gstr_file:
+            st.success(f"✓ GSTR-2B uploaded: **{gstr_file.name}**")
+        else:
+            st.warning("Waiting for GSTR-2B file…")
+    with b2:
+        if pr_file:
+            st.success(f"✓ Purchase Register uploaded: **{pr_file.name}**")
+        else:
+            st.warning("Waiting for Purchase Register file…")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ===========================================================================
+# SECTION 3 — Reconcile Button
+# ===========================================================================
+_, rbtn, _ = st.columns([2, 6, 2])
+with rbtn:
+    do_reconcile = st.button(
+        "⚡  Reconcile Data with AI",
+        type="primary",
+        use_container_width=True,
+        key="reconcile_btn",
+        disabled=(gstr_file is None or pr_file is None),
     )
 
-    # Status row
-    p_badge = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
-               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>UPLOADED</span>"
-               if pr_done else
-               "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
-               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>PENDING</span>")
-    g_badge = ("<span style='background:#34D39922; color:#34D399; border:1px solid #34D39944; "
-               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>UPLOADED</span>"
-               if gstr_done else
-               "<span style='background:#F8717122; color:#F87171; border:1px solid #F8717144; "
-               "border-radius:20px; padding:2px 12px; font-size:0.72rem; font-weight:600;'>PENDING</span>")
+if do_reconcile and gstr_file and pr_file:
+    progress = st.progress(0, "Reading files…")
+    try:
+        gstr_raw = read_uploaded_file(gstr_file)
+        pr_raw   = read_uploaded_file(pr_file)
 
-    st.markdown(
-        f"""
-        <div style="display:flex; gap:16px; margin-bottom:16px;">
-            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(0,212,255,0.2);
-                 border-radius:10px; padding:10px 16px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="color:#00D4FF; font-weight:600;">Purchase Register</span>
-                {p_badge}
-            </div>
-            <div style="flex:1; background:rgba(26,26,46,0.6); border:1px solid rgba(167,139,250,0.2);
-                 border-radius:10px; padding:10px 16px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="color:#A78BFA; font-weight:600;">GSTR-2B</span>
-                {g_badge}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        if gstr_raw.empty or pr_raw.empty:
+            st.error("One or both files appear empty or could not be parsed.")
+            progress.empty()
+        else:
+            progress.progress(20, "Auto-detecting columns…")
+            gstr_proc = auto_process(gstr_raw.copy(), "GSTR2B")
+            pr_proc   = auto_process(pr_raw.copy(),   "PR")
 
-    from modules.upload import _render_single_uploader
-    col_pr, col_gstr = st.columns(2, gap="large")
-    with col_pr:
-        _render_single_uploader("Purchase Register", "pr_df", "PR", "#00D4FF")
-    with col_gstr:
-        _render_single_uploader("GSTR-2B", "gstr2b_df", "2B", "#A78BFA")
+            progress.progress(50, "Running AI reconciliation…")
+            from modules.matching import run_reconciliation
+            results = run_reconciliation(pr_proc, gstr_proc)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+            progress.progress(85, "Building results table…")
+            master = build_master(results)
 
-    # ── Proceed ───────────────────────────────────────────────────────────
-    if pr_done and gstr_done:
-        st.markdown(
-            "<div style='background:rgba(52,211,153,0.1); border:1px solid #34D39944; "
-            "border-radius:10px; padding:14px 20px; text-align:center; color:#34D399; "
-            "font-weight:700; font-size:1rem; margin-bottom:12px;'>"
-            "Both files uploaded! Click below to continue.</div>",
-            unsafe_allow_html=True,
-        )
-        if st.button("Next: Column Mapping", type="primary", use_container_width=True, key="upload_next"):
-            st.session_state["current_page"] = "Column Mapping"
+            st.session_state["recon_results"] = results
+            st.session_state["master_df"]     = master
+            st.session_state["gstr_name"]     = gstr_file.name
+            st.session_state["pr_name"]       = pr_file.name
+            log_event("RECONCILE", f"Complete: {results.get('stats', {})}")
+
+            progress.progress(100, "Done!")
+            import time; time.sleep(0.4)
+            progress.empty()
             st.rerun()
-    else:
-        pending = []
-        if not pr_done:   pending.append("Purchase Register")
-        if not gstr_done: pending.append("GSTR-2B")
-        st.markdown(
-            f"<div style='background:rgba(248,113,113,0.08); border:1px solid #F8717133; "
-            f"border-radius:10px; padding:12px 18px; color:#94A3B8; font-size:0.85rem;'>"
-            f"Waiting for: <strong style='color:#F87171;'>{' and '.join(pending)}</strong></div>",
-            unsafe_allow_html=True,
-        )
 
-    # ── Template Download (at bottom — download once, reuse always) ────────
+    except Exception as exc:
+        st.error(f"Reconciliation failed: {exc}")
+        logger.exception("Reconciliation error")
+        progress.empty()
+
+# ===========================================================================
+# SECTION 4 — Results (shown after reconciliation)
+# ===========================================================================
+recon_results = st.session_state.get("recon_results")
+master_df     = st.session_state.get("master_df")
+
+if recon_results is not None and master_df is not None and not master_df.empty:
+    stats = recon_results.get("stats", {})
+
+    st.divider()
+    st.markdown('<div class="sec-label">Summary</div>', unsafe_allow_html=True)
+
+    # ── KPI row ─────────────────────────────────────────────────────────────
+    mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
+    mc1.metric("Total GSTR-2B",    f"{stats.get('total_gstr2b', 0):,}")
+    mc2.metric("Total PR",         f"{stats.get('total_pr', 0):,}")
+    mc3.metric("Fully Matched",    f"{stats.get('total_matched', 0):,}")
+    mc4.metric("Near Match",       f"{stats.get('fuzzy_candidates_count', 0):,}")
+    mc5.metric("Missing in Books", f"{stats.get('missing_in_books_count', 0):,}")
+    mc6.metric("Match Rate",       f"{stats.get('match_rate', 0):.1f}%")
+
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("Need a template? Download Excel Templates here"):
-        tc1, tc2 = st.columns(2, gap="medium")
-        with tc1:
-            st.markdown(
-                "<div style='background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.25);"
-                " border-radius:10px; padding:14px; text-align:center;'>"
-                "<div style='color:#00D4FF; font-weight:700;'>Purchase Register Template</div>"
-                "<div style='color:#64748B; font-size:0.75rem; margin-top:4px;'>11 columns with 3 sample rows</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            st.download_button(
-                "Download PR Template", make_template("Purchase Register"),
-                "Purchase_Register_Template.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, key="dl_pr_template",
-            )
-        with tc2:
-            st.markdown(
-                "<div style='background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.25);"
-                " border-radius:10px; padding:14px; text-align:center;'>"
-                "<div style='color:#A78BFA; font-weight:700;'>GSTR-2B Template</div>"
-                "<div style='color:#64748B; font-size:0.75rem; margin-top:4px;'>11 columns with 3 sample rows</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            st.download_button(
-                "Download GSTR-2B Template", make_template("GSTR-2B"),
-                "GSTR2B_Template.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, key="dl_gstr_template",
-            )
 
+    # ── Status legend ────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+        <span style="background:#DCFCE7; color:#166534; border-radius:20px;
+               padding:3px 12px; font-size:0.75rem; font-weight:600;">● Fully Matched</span>
+        <span style="background:#FEF9C3; color:#92400E; border-radius:20px;
+               padding:3px 12px; font-size:0.75rem; font-weight:600;">● Near Match</span>
+        <span style="background:#FEE2E2; color:#991B1B; border-radius:20px;
+               padding:3px 12px; font-size:0.75rem; font-weight:600;">● Missing in Books</span>
+        <span style="background:#FFF7ED; color:#9A3412; border-radius:20px;
+               padding:3px 12px; font-size:0.75rem; font-weight:600;">● Missing in GSTR-2B</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# About Page
-# ---------------------------------------------------------------------------
+    # ── Build display table ──────────────────────────────────────────────────
+    SHOW_COLS = ["vendor_name","gstin","invoice_number","invoice_date",
+                 "taxable_value","cgst","sgst","igst","total_gst","invoice_value"]
+    RENAME = {
+        "vendor_name":   "Party Name",
+        "gstin":         "GSTIN",
+        "invoice_number":"Invoice No",
+        "invoice_date":  "Invoice Date",
+        "taxable_value": "Taxable Value",
+        "cgst":          "CGST",
+        "sgst":          "SGST",
+        "igst":          "IGST",
+        "total_gst":     "Total GST",
+        "invoice_value": "Invoice Value",
+    }
 
-def render_about_page() -> None:
-    """Render the About page."""
-    settings = st.session_state.get("app_settings", {})
+    disp_cols = ["Status"] + [c for c in SHOW_COLS if c in master_df.columns]
+    if "Match Reason" in master_df.columns:
+        disp_cols.append("Match Reason")
+    if "Similarity %" in master_df.columns:
+        disp_cols.append("Similarity %")
 
-    st.markdown(
-        f"""
-        <div style="text-align:center; padding:40px 0;">
-            <div style="font-size:4rem; margin-bottom:16px;">📊</div>
-            <div style="font-size:2rem; font-weight:800; color:#00D4FF;">
-                GST Input Reconciliation System
-            </div>
-            <div style="font-size:1rem; color:#A78BFA; margin-top:6px; margin-bottom:4px;">
-                Enterprise Edition v1.0
-            </div>
-            <div style="font-size:0.85rem; color:#64748B;">
-                Prepared & Developed by
-                <span style="color:#00D4FF; font-weight:700;">Karthik LVN</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    disp = master_df[disp_cols].copy()
+    disp = disp.rename(columns=RENAME)
+
+    # Format dates
+    for dc in ["Invoice Date"]:
+        if dc in disp.columns:
+            disp[dc] = disp[dc].astype(str).str[:10].str.replace(" 00:00:00","",regex=False)
+
+    # Colour-code the Status column
+    STATUS_COLORS_MAP = {
+        "Fully Matched":     ("DCFCE7", "166534"),
+        "Near Match":        ("FEF9C3", "92400E"),
+        "Missing in Books":  ("FEE2E2", "991B1B"),
+        "Missing in GSTR-2B":("FFF7ED", "9A3412"),
+    }
+
+    def _style_row(row):
+        status = row.get("Status", "")
+        bg, fg = STATUS_COLORS_MAP.get(status, ("FFFFFF", "111827"))
+        styles = []
+        for col in row.index:
+            if col == "Status":
+                styles.append(
+                    f"background-color:#{bg}; color:#{fg}; font-weight:700; "
+                    f"border-radius:6px; text-align:center;"
+                )
+            else:
+                styles.append(f"background-color:#{bg}22; color:#1E293B;")
+        return styles
+
+    styled = disp.style.apply(_style_row, axis=1)
+
+    st.dataframe(styled, use_container_width=True, hide_index=True, height=460)
+    st.caption(
+        f"**{len(master_df):,}** total records &nbsp;|&nbsp; "
+        f"GSTR-2B: **{st.session_state.get('gstr_name','?')}** &nbsp;·&nbsp; "
+        f"Purchase Register: **{st.session_state.get('pr_name','?')}**"
     )
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    a1, a2 = st.columns(2)
-
-    with a1:
-        st.markdown("### 🚀 Application Info")
-        info = {
-            "Version": "1.0 Enterprise Edition",
-            "Framework": "Python + Streamlit",
-            "Matching Engine": "5-Tier (Exact + Fuzzy)",
-            "Max File Size": "500 MB",
-            "Supported Formats": "Excel (.xlsx, .xls), CSV",
-            "PDF Engine": "ReportLab",
-            "Chart Engine": "Plotly",
-            "Fuzzy Matching": "RapidFuzz",
-            "Reports": "12-Sheet Excel + PDF + CSV",
-        }
-        for k, v in info.items():
-            st.markdown(
-                f"<div style='display:flex; justify-content:space-between; "
-                f"padding:6px 0; border-bottom:1px solid rgba(0,212,255,0.1);'>"
-                f"<span style='color:#94A3B8;'>{k}</span>"
-                f"<span style='color:#EAEAEA; font-weight:600;'>{v}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-    with a2:
-        st.markdown("### ✨ Features")
-        features = [
-            "5-tier intelligent matching engine",
-            "Fuzzy matching with confidence scoring",
-            "Automatic column detection & mapping",
-            "Complete data cleaning pipeline",
-            "GSTIN format + checksum validation",
-            "12-sheet styled Excel workbook export",
-            "Professional ReportLab PDF reports",
-            "Interactive Plotly analytics dashboard",
-            "Admin/User role-based access control",
-            "Admin approval workflow for new users",
-            "SQLite audit log for all actions",
-            "Vendor & monthly summary analytics",
-            "Global search & multi-filter support",
-            "Supports 500K+ invoices efficiently",
-        ]
-        for f in features:
-            st.markdown(
-                f"<div style='color:#94A3B8; padding:4px 0;'>✅ {f}</div>",
-                unsafe_allow_html=True,
-            )
-
-    st.divider()
-
-    st.markdown(
-        """
-        <div style="text-align:center; color:#374151; font-size:0.8rem; padding:20px;">
-            GST Input Reconciliation System &nbsp;·&nbsp; Enterprise Edition v1.0<br>
-            Prepared & Developed by <strong style="color:#00D4FF;">Karthik LVN</strong><br>
-            © 2026 Karthik LVN &nbsp;·&nbsp; All Rights Reserved<br>
-            Developed using Python &amp; Streamlit &nbsp;·&nbsp; Confidential
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Main Application Entry
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    """Main application entry point."""
-
-    # ── Inject global styles ────────────────────────────────────────────────
-    st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
-
-    # ── Top-right branding badge ────────────────────────────────────────────
-    st.markdown(
-        """
-        <div id="karthik-badge">
-            <span class="kb-name">&#128100; Karthik LVN</span>
-            <span class="kb-sep">|</span>
-            <span class="kb-phone">&#128222;&nbsp;9849270702</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # ── Initialize session ──────────────────────────────────────────────────
-    init_session_state()
-
-    # ── Splash Screen disabled for fast startup ──────────────────────────
-    # (was causing 3+ second delay on first load)
-    st.session_state["splash_shown"] = True
-
-    # ── Load settings into session state ──────────────────────────────────
-    if st.session_state.get("app_settings") is None:
-        st.session_state["app_settings"] = load_settings()
-
-    # ── Authentication gate (DISABLED — re-enable later) ──────────────────
-    # if not st.session_state.get("authenticated", False):
-    #     render_login_page()
-    #     return
-
-    # Auto-login as admin (no login required)
-    if not st.session_state.get("authenticated", False):
-        st.session_state["authenticated"] = True
-        st.session_state["username"]      = "admin"
-        st.session_state["role"]          = "admin"
-        st.session_state["full_name"]     = "Karthik LVN"
-        st.session_state["current_page"]  = "Dashboard"
-
-    # ── Authenticated: render main app ─────────────────────────────────────
-    render_sidebar()
-
-    current_page = st.session_state.get("current_page", "Dashboard")
-    route_page(current_page)
-
-    render_footer()
-
-    # ── Periodic cleanup (runs silently) ───────────────────────────────────
-    if st.session_state.get("app_settings", {}).get("auto_cleanup", True):
+    # ── Download Excel Report ────────────────────────────────────────────────
+    _, dl_col, _ = st.columns([2, 6, 2])
+    with dl_col:
         try:
-            cleanup_temp_files(older_than_hours=24)
-        except Exception:
-            pass
+            from modules.reports import _build_sheet_excel
+            excel_bytes = _build_sheet_excel(recon_results)
+            fname = f"GST_Recon_{datetime.date.today().strftime('%Y%m%d')}.xlsx"
+            st.download_button(
+                "⬇  Download Reconciled Report (Excel)",
+                data=excel_bytes,
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="dl_report",
+            )
+        except Exception as exc:
+            st.error(f"Report generation failed: {exc}")
+            logger.exception("Report generation error")
 
-
-# ---------------------------------------------------------------------------
-# Entry
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    main()
+# ===========================================================================
+# Footer
+# ===========================================================================
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("""
+<div style="text-align:center; color:#94A3B8; font-size:0.74rem;
+     border-top:1px solid #E2E8F0; padding-top:16px;">
+    GST Reconciliation App v2.0 &nbsp;&middot;&nbsp; AI-Powered Invoice Matching<br>
+    Prepared &amp; Developed by
+    <strong style="color:#4F46E5;">Karthik LVN</strong>
+    &nbsp;&middot;&nbsp; &#128222; 9849270702
+</div>
+""", unsafe_allow_html=True)
