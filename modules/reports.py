@@ -267,8 +267,34 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
          (gst_dup if isinstance(gst_dup, pd.DataFrame) else pd.DataFrame())],
         ignore_index=True
     )
-    unrecon_frames = [d for d in [books,gstr,fuzzy] if isinstance(d,pd.DataFrame) and not d.empty]
+
+    def _to_plain(df, status=None):
+        """Extract plain WANT columns from a DF that may have _pr/_gstr2b suffixes."""
+        if df is None or (hasattr(df,'empty') and df.empty):
+            return pd.DataFrame()
+        # Try PR side first, then GSTR2B, then plain
+        pr_c = [c for c in df.columns if c.endswith('_pr') and not c.startswith('_')]
+        if pr_c:
+            out = df[pr_c].copy()
+            out.columns = [c.replace('_pr','') for c in out.columns]
+        else:
+            plain_c = [c for c in WANT if c in df.columns]
+            if not plain_c:
+                return pd.DataFrame()
+            out = df[plain_c].copy()
+        if status:
+            out.insert(0,'Status',status)
+        return out
+
+    # Build plain versions for Unreconciled and All Records
+    books_plain  = _to_plain(books,  "Missing in Books")
+    gstr_plain   = _to_plain(gstr,   "Missing in GSTR-2B")
+    fuzzy_plain  = _to_plain(fuzzy,  "Near Match (Verify)")
+
+    unrecon_frames = [d for d in [books_plain, gstr_plain, fuzzy_plain]
+                      if isinstance(d,pd.DataFrame) and not d.empty]
     unrecon = pd.concat(unrecon_frames, ignore_index=True) if unrecon_frames else pd.DataFrame()
+
 
     # ── Build Workbook ──────────────────────────────────────────────────────
     wb = Workbook()
@@ -326,26 +352,16 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
     # 7. Unreconciled
     write_sheet(wb, "Unreconciled",       unrecon, "94A3B8", "unrecon")
 
-    # 8. All Records — plain extract (PR side if merged, else plain)
+    # 8. All Records — Status + plain columns for all records
     ws_all = wb.create_sheet("All Records")
     ws_all.sheet_properties.tabColor = "00D4FF"
-    if not (isinstance(matched, pd.DataFrame) and not matched.empty):
-        all_records = unrecon
-    else:
-        # Extract PR side of matched + all unreconciled
-        pr_cols = [c for c in matched.columns if c.endswith("_pr") and not c.startswith("_")]
-        if pr_cols:
-            m_pr = matched[pr_cols].copy()
-            m_pr.columns = [c.replace("_pr","") for c in m_pr.columns]
-            m_pr.insert(0,"Status","Matched")
-        else:
-            m_pr = pd.DataFrame()
-
-        all_records = pd.concat(
-            [f for f in [m_pr]+unrecon_frames if isinstance(f,pd.DataFrame) and not f.empty],
-            ignore_index=True
-        )
-    if all_records is not None and not all_records.empty:
+    matched_plain = _to_plain(matched, "Matched")
+    all_records = pd.concat(
+        [f for f in [matched_plain, books_plain, gstr_plain, fuzzy_plain]
+         if isinstance(f,pd.DataFrame) and not f.empty],
+        ignore_index=True
+    )
+    if not all_records.empty:
         plain = [c for c in WANT if c in all_records.columns]
         cols_out = (["Status"] if "Status" in all_records.columns else []) + plain
         df_all = all_records[cols_out].copy()
@@ -355,6 +371,7 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
                     Font(name="Calibri", bold=True, color="00D4FF", size=9))
     else:
         ws_all["A1"] = "No records."
+
 
     # 9. As Per Books / As Per GSTR-2B
     write_per_books(wb,  matched, gstr,  fuzzy, pr_dup, books)
