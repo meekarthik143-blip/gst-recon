@@ -131,7 +131,7 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
                     PatternFill("solid", fgColor=hdr_bg),
                     Font(name="Calibri", bold=True, color=hdr_fg, size=9))
 
-    # ── Matched sheet: Books (PR) columns only — clean readable format ────────
+    # ── Matched sheet: Books + 2B columns side-by-side in same row ───────────
     def write_matched_sheet(wb, df):
         ws = wb.create_sheet("Matched")
         ws.sheet_properties.tabColor = "34D399"
@@ -140,25 +140,9 @@ def _build_sheet_excel(recon_results: dict) -> bytes:
             ws["A1"].font = Font(name="Calibri", color="94A3B8", italic=True, size=10)
             return
         hdr_bg, hdr_fg = HDR["matched"]
-        hdr_fill = PatternFill("solid", fgColor=hdr_bg)
-        hdr_font = Font(name="Calibri", bold=True, color=hdr_fg, size=9)
+        _write_comparative(ws, df, hdr_bg, hdr_fg, reason_cols=None)
 
-        # Extract PR side columns with (Books) suffix labels
-        pr_cols = [c + "_pr" for c in WANT if c + "_pr" in df.columns]
-        if not pr_cols:
-            # Fallback: plain columns
-            pr_cols = [c for c in WANT if c in df.columns]
-        if not pr_cols:
-            ws["A1"] = "No Matched records."; return
 
-        df_out = df[pr_cols].copy()
-        # Rename: vendor_name_pr → Vendor Name (Books), gstin_pr → Gstin (Books), etc.
-        df_out.columns = [
-            c.replace("_pr", "").replace("_", " ").title() + " (Books)"
-            for c in df_out.columns
-        ]
-        ws.freeze_panes = "A2"
-        _write_rows(ws, df_out, hdr_fill, hdr_font, start_row=1)
 
 
 
