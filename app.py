@@ -16,9 +16,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
     menu_items={
-        "About": "GST Reconciliation v2.0\nPrepared & Developed by Karthik LVN | 9849270702",
+        "Get help":     None,
+        "Report a bug": None,
+        "About":        "GST Reconciliation v2.0\nPrepared & Developed by Karthik LVN | 9849270702",
     },
 )
+
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────
 from modules.utils import ensure_directories, setup_logging
@@ -52,7 +55,18 @@ st.markdown("""
 #MainMenu { visibility: hidden; }
 footer    { visibility: hidden; }
 header    { visibility: hidden; }
-.stDeployButton { display: none; }
+.stDeployButton { display: none !important; }
+
+/* Hide ALL Streamlit Cloud management buttons (Delete, Settings, Rerun etc.) */
+[data-testid="stToolbar"]            { display: none !important; }
+[data-testid="stToolbarActions"]     { display: none !important; }
+[data-testid="baseButton-header"]    { display: none !important; }
+[data-testid="manage-app-button"]    { display: none !important; }
+button[kind="header"]                { display: none !important; }
+.stAppToolbar                        { display: none !important; }
+#stDecoration                        { display: none !important; }
+
+
 
 /* ── Top-LEFT contact badge ── */
 #karthik-badge {
